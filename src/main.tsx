@@ -1,4 +1,4 @@
-import { For, createMemo, createSignal, onCleanup } from 'solid-js';
+import { For, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import './styles.css';
@@ -24,18 +24,18 @@ const durationSeconds = 214;
 const zoomOptions = [50, 75, 100, 125, 150];
 
 const speakers: Speaker[] = [
-  { label: 'L', group: 'front', area: 'left' },
-  { label: 'C', group: 'front', area: 'center' },
-  { label: 'R', group: 'front', area: 'right' },
-  { label: 'LFE', group: 'lfe', area: 'lfe' },
-  { label: 'Ls', group: 'side', area: 'leftSide' },
-  { label: 'Rs', group: 'side', area: 'rightSide' },
-  { label: 'Lrs', group: 'rear', area: 'leftRear' },
-  { label: 'Rrs', group: 'rear', area: 'rightRear' },
-  { label: 'Ltf', group: 'top', area: 'leftTopFront' },
-  { label: 'Rtf', group: 'top', area: 'rightTopFront' },
-  { label: 'Ltr', group: 'top', area: 'leftTopRear' },
-  { label: 'Rtr', group: 'top', area: 'rightTopRear' },
+  { label: 'L',   group: 'front', area: 'left' },
+  { label: 'C',   group: 'front', area: 'center' },
+  { label: 'R',   group: 'front', area: 'right' },
+  { label: 'LFE', group: 'lfe',   area: 'lfe' },
+  { label: 'Ls',  group: 'side',  area: 'leftSide' },
+  { label: 'Rs',  group: 'side',  area: 'rightSide' },
+  { label: 'Lrs', group: 'rear',  area: 'leftRear' },
+  { label: 'Rrs', group: 'rear',  area: 'rightRear' },
+  { label: 'Ltf', group: 'top',   area: 'leftTopFront' },
+  { label: 'Rtf', group: 'top',   area: 'rightTopFront' },
+  { label: 'Ltr', group: 'top',   area: 'leftTopRear' },
+  { label: 'Rtr', group: 'top',   area: 'rightTopRear' },
 ];
 
 const meterRows = [
@@ -78,14 +78,18 @@ function App() {
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [draft, setDraft] = createSignal('');
   const [notes, setNotes] = createSignal(seedNotes);
-  const [activeSpeaker, setActiveSpeaker] = createSignal('C');
+  const [activeSpeakers, setActiveSpeakers] = createSignal<Set<string>>(new Set(['C']));
   const [soloGroups, setSoloGroups] = createSignal<Set<Speaker['group']>>(new Set());
+  const [speakerMode, setSpeakerMode] = createSignal<'solo' | 'mute'>('solo');
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
   const [isDraggingTimeline, setIsDraggingTimeline] = createSignal(false);
   const [isResizingNotes, setIsResizingNotes] = createSignal(false);
 
   let timelineEl: HTMLDivElement | undefined;
+  let roomPlaneEl: HTMLDivElement | undefined;
+  const [gridScale, setGridScale] = createSignal(1);
+  const BASE_ROOM_W = 560;
 
   const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : `${notesWidth()}%`));
   const workspaceGrid = createMemo(() => `minmax(0, 1fr) 10px ${panelWidth()}`);
@@ -165,6 +169,16 @@ function App() {
     window.removeEventListener('pointermove', onResizeMove);
   });
 
+  onMount(() => {
+    if (!roomPlaneEl) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      setGridScale(Math.min(1, w / BASE_ROOM_W));
+    });
+    ro.observe(roomPlaneEl);
+    onCleanup(() => ro.disconnect());
+  });
+
   const addNote = () => {
     const text = draft().trim();
     if (!text) return;
@@ -219,6 +233,19 @@ function App() {
               <strong>Top Monitoring View</strong>
             </div>
             <div class="group-pills">
+              <div class="mode-toggle">
+                <button
+                  type="button"
+                  classList={{ 'is-mode-active': speakerMode() === 'solo' }}
+                  onClick={() => setSpeakerMode('solo')}
+                >Solo</button>
+                <button
+                  type="button"
+                  classList={{ 'is-mode-mute': speakerMode() === 'mute' }}
+                  onClick={() => setSpeakerMode('mute')}
+                >Mute</button>
+              </div>
+              <div class="pills-divider" />
               <For each={[
                 { id: 'front' as const, label: 'Front' },
                 { id: 'side' as const, label: 'Side' },
@@ -242,14 +269,14 @@ function App() {
                         }
                         return next;
                       });
-                      setActiveSpeaker('');
+                      setActiveSpeakers(new Set<string>());
                     }}
                   >
                     {group.label}
                   </button>
                 )}
               </For>
-              <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSoloGroups(new Set()); setActiveSpeaker(''); }}>
+              <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSoloGroups(new Set<Speaker['group']>()); setActiveSpeakers(new Set<string>()); }}>
                 Clear
               </button>
             </div>
@@ -292,17 +319,17 @@ function App() {
             <section class="speaker-view" aria-label="Top-down speaker view">
               <div class="speaker-view-title">
                 <span>Speaker View</span>
-                <strong>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ' Solo' : activeSpeaker() || 'All'}</strong>
+                <strong>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ' Solo' : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') : 'All'}</strong>
               </div>
-              <div class="room-plane">
+              <div class="room-plane" ref={roomPlaneEl}>
                 <div class="screen-line">SCREEN</div>
-                <div class="speaker-grid">
+                <div class="speaker-grid" style={{ transform: `scaleX(${gridScale()})`, 'transform-origin': 'center top' }}>
                   <div class="listener-dot">
                     <span />
                   </div>
                   <For each={speakers}>
                     {(speaker) => {
-                      const isActive = () => activeSpeaker() === speaker.label || soloGroups().has(speaker.group);
+                      const isActive = () => activeSpeakers().has(speaker.label) || soloGroups().has(speaker.group);
                       return (
                         <button
                           type="button"
@@ -313,12 +340,23 @@ function App() {
                             'is-rear': speaker.group === 'rear',
                             'is-height': speaker.group === 'top',
                             'is-lfe': speaker.group === 'lfe',
-                            'is-active': isActive(),
+                            'is-active': isActive() && speakerMode() === 'solo',
+                            'is-muted': isActive() && speakerMode() === 'mute',
                           }}
                           style={{ 'grid-area': speaker.area }}
-                          onClick={() => {
-                            setSoloGroups(new Set());
-                            setActiveSpeaker((cur) => (cur === speaker.label ? '' : speaker.label));
+                          onClick={(e) => {
+                            setSoloGroups(new Set<Speaker['group']>());
+                            setActiveSpeakers((prev) => {
+                              const next = new Set(prev);
+                              if (e.shiftKey) {
+                                if (next.has(speaker.label)) next.delete(speaker.label);
+                                else next.add(speaker.label);
+                              } else {
+                                if (next.size === 1 && next.has(speaker.label)) next.clear();
+                                else { next.clear(); next.add(speaker.label); }
+                              }
+                              return next;
+                            });
                           }}
                           aria-pressed={isActive()}
                         >
