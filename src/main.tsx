@@ -12,47 +12,6 @@ type Speaker = {
   area: string;
 };
 
-function SpeakerCabinet(props: { group: Speaker['group'] }) {
-  if (props.group === 'lfe') {
-    return (
-      <svg class="spk-3d" viewBox="0 0 52 48" fill="none">
-        <path d="M4 18 L36 18 L36 46 L4 46 Z" fill="#1e3040" stroke="rgba(180,210,230,0.22)" stroke-width="0.6"/>
-        <path d="M4 18 L18 8 L50 8 L36 18 Z" fill="#2a4458" stroke="rgba(180,210,230,0.22)" stroke-width="0.6"/>
-        <path d="M36 18 L50 8 L50 36 L36 46 Z" fill="#0f1e2a" stroke="rgba(180,210,230,0.12)" stroke-width="0.6"/>
-        <circle cx="20" cy="33" r="11" stroke="rgba(160,200,220,0.4)" stroke-width="1.2" fill="rgba(0,0,0,0.45)"/>
-        <circle cx="20" cy="33" r="6.5" stroke="rgba(160,200,220,0.25)" stroke-width="0.9" fill="rgba(0,0,0,0.5)"/>
-        <circle cx="20" cy="33" r="2.5" fill="rgba(160,200,220,0.35)"/>
-        <rect x="6" y="42" width="9" height="2.5" rx="1.2" fill="rgba(160,200,220,0.2)"/>
-      </svg>
-    );
-  }
-  if (props.group === 'top') {
-    return (
-      <svg class="spk-3d" viewBox="0 0 44 48" fill="none">
-        <path d="M4 16 L28 16 L28 42 L4 42 Z" fill="#1e3040" stroke="rgba(180,210,230,0.22)" stroke-width="0.6" stroke-dasharray="3 2"/>
-        <path d="M4 16 L16 7 L40 7 L28 16 Z" fill="#2a4458" stroke="rgba(180,210,230,0.22)" stroke-width="0.6" stroke-dasharray="3 2"/>
-        <path d="M28 16 L40 7 L40 33 L28 42 Z" fill="#0f1e2a" stroke="rgba(180,210,230,0.12)" stroke-width="0.6" stroke-dasharray="3 2"/>
-        <circle cx="16" cy="30" r="7.5" stroke="rgba(160,200,220,0.35)" stroke-width="1" fill="rgba(0,0,0,0.4)"/>
-        <circle cx="16" cy="30" r="3.5" stroke="rgba(160,200,220,0.2)" stroke-width="0.8" fill="rgba(0,0,0,0.5)"/>
-        <circle cx="16" cy="30" r="1.5" fill="rgba(160,200,220,0.3)"/>
-        <path d="M24 11 L26 7 L28 11" stroke="rgba(160,200,220,0.55)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    );
-  }
-  return (
-    <svg class="spk-3d" viewBox="0 0 44 56" fill="none">
-      <path d="M4 16 L28 16 L28 52 L4 52 Z" fill="#1e3040" stroke="rgba(180,210,230,0.22)" stroke-width="0.6"/>
-      <path d="M4 16 L16 6 L40 6 L28 16 Z" fill="#2a4458" stroke="rgba(180,210,230,0.22)" stroke-width="0.6"/>
-      <path d="M28 16 L40 6 L40 42 L28 52 Z" fill="#0f1e2a" stroke="rgba(180,210,230,0.12)" stroke-width="0.6"/>
-      <circle cx="16" cy="24" r="4.5" stroke="rgba(160,200,220,0.3)" stroke-width="0.9" fill="rgba(0,0,0,0.4)"/>
-      <circle cx="16" cy="24" r="2" fill="rgba(160,200,220,0.28)"/>
-      <circle cx="16" cy="38" r="9.5" stroke="rgba(160,200,220,0.38)" stroke-width="1.1" fill="rgba(0,0,0,0.45)"/>
-      <circle cx="16" cy="38" r="5.5" stroke="rgba(160,200,220,0.22)" stroke-width="0.9" fill="rgba(0,0,0,0.5)"/>
-      <circle cx="16" cy="38" r="2.2" fill="rgba(160,200,220,0.32)"/>
-    </svg>
-  );
-}
-
 type Note = {
   id: number;
   rangeStart: number;
@@ -349,6 +308,9 @@ function App() {
                           type="button"
                           class="speaker-button"
                           classList={{
+                            'is-front': speaker.group === 'front',
+                            'is-side': speaker.group === 'side',
+                            'is-rear': speaker.group === 'rear',
                             'is-height': speaker.group === 'top',
                             'is-lfe': speaker.group === 'lfe',
                             'is-active': isActive(),
@@ -360,8 +322,7 @@ function App() {
                           }}
                           aria-pressed={isActive()}
                         >
-                          <SpeakerCabinet group={speaker.group} />
-                          <span class="spk-label">{speaker.label}</span>
+                          {speaker.label}
                         </button>
                       );
                     }}
