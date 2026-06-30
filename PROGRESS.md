@@ -34,3 +34,27 @@ Define Phase 1 from scratch for Pik Pro Player:
 - Real import/playback architecture decision
 - Project/version/note model
 - Speaker room visualization
+
+## 2026-06-30 Phase 1 UI Prototype
+
+### Completed
+
+- Replaced reset landing screen with the first professional review workspace.
+- Implemented a 70% speaker stage / 30% notes panel layout.
+- Added draggable notes panel width, clamped between 24% and 42%.
+- Added collapsible right notes panel.
+- Implemented a light Apple-style visual direction with white surfaces and cyan accents.
+- Added a 3D-perspective 7.1.4 speaker room mockup.
+- Enlarged speaker buttons and added hover/active cyan glow states.
+- Implemented left-button timeline drag to lock a time range.
+- Notes bind to time ranges, not single-point timecodes.
+- Timeline pointer-down immediately locks the current timecode/range.
+
+### Verification
+
+- `npm run build`: PASS.
+- `npm run tauri:build`: PASS.
+
+### Notes
+
+- This is still a frontend prototype. It does not yet connect to real playback, import, SQLite, or audio meters.
