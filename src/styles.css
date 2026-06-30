@@ -179,17 +179,150 @@ button {
   box-shadow: var(--tight-shadow);
 }
 
+.group-pills button.is-solo {
+  background: var(--cyan);
+  color: #ffffff;
+  box-shadow: var(--tight-shadow);
+}
+
 .room-wrap {
   min-height: 0;
   display: grid;
-  place-items: center;
-  padding: 30px;
+  grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+  gap: 18px;
+  padding: 26px 28px;
+}
+
+.analysis-panel,
+.speaker-view {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.analysis-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px;
+}
+
+.analysis-heading span,
+.analysis-heading strong,
+.speaker-view-title span,
+.speaker-view-title strong,
+.loudness-readout span,
+.loudness-readout strong,
+.loudness-stats span,
+.loudness-stats strong {
+  display: block;
+}
+
+.analysis-heading span,
+.speaker-view-title span,
+.loudness-readout span,
+.loudness-stats span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.analysis-heading strong,
+.speaker-view-title strong {
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.loudness-readout {
+  padding: 18px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(0, 167, 200, 0.1), rgba(0, 167, 200, 0.04));
+  border: 1px solid rgba(0, 167, 200, 0.2);
+}
+
+.loudness-readout strong {
+  margin-top: 6px;
+  color: var(--cyan-strong);
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+}
+
+.loudness-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.loudness-stats div {
+  padding: 13px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.loudness-stats strong {
+  margin-top: 5px;
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.meter-list {
+  min-height: 0;
+  display: grid;
+  align-content: end;
+  gap: 13px;
+}
+
+.meter-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.meter-row > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.meter-row div {
+  height: 14px;
+  border-radius: 999px;
+  background: #e6eef2;
+  overflow: hidden;
+}
+
+.meter-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #72dce9, var(--cyan));
+}
+
+.speaker-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 18px;
+}
+
+.speaker-view-title {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.speaker-view-title strong {
+  color: var(--cyan-strong);
 }
 
 .room-plane {
   position: relative;
-  width: min(760px, 86%);
-  aspect-ratio: 1.62;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
   border: 1px solid rgba(0, 167, 200, 0.22);
   border-radius: 8px;
   background:
@@ -198,7 +331,6 @@ button {
     repeating-linear-gradient(0deg, transparent 0 42px, rgba(0, 167, 200, 0.045) 43px 44px),
     #fbfdfe;
   box-shadow: inset 0 -40px 80px rgba(0, 167, 200, 0.06);
-  transform: perspective(900px) rotateX(7deg);
 }
 
 .room-plane::before,
@@ -209,9 +341,9 @@ button {
 }
 
 .room-plane::before {
-  inset: 12%;
+  inset: 16% 19%;
   border: 1px dashed rgba(0, 167, 200, 0.24);
-  border-radius: 50%;
+  border-radius: 8px;
 }
 
 .room-plane::after {
@@ -241,7 +373,7 @@ button {
 .listener-dot {
   position: absolute;
   left: 50%;
-  top: 52%;
+  top: 51%;
   width: 74px;
   height: 74px;
   transform: translate(-50%, -50%);
@@ -261,9 +393,9 @@ button {
 
 .speaker-button {
   position: absolute;
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
+  width: 72px;
+  height: 54px;
+  border-radius: 8px;
   background: #ffffff;
   border: 1px solid rgba(0, 167, 200, 0.28);
   color: var(--ink);
@@ -279,7 +411,7 @@ button {
   content: "";
   position: absolute;
   inset: -8px;
-  border-radius: 24px;
+  border-radius: 12px;
   background: rgba(0, 167, 200, 0.14);
   opacity: 0;
   transition: opacity 140ms ease;
@@ -301,6 +433,13 @@ button {
 
 .speaker-button.is-height {
   border-style: dashed;
+  background: #fbfdff;
+}
+
+.speaker-button.is-lfe {
+  width: 78px;
+  border-color: rgba(246, 174, 45, 0.42);
+  color: #9d6b00;
 }
 
 .timeline-card {
@@ -571,8 +710,12 @@ button {
   }
 
   .speaker-button {
-    width: 50px;
-    height: 50px;
-    border-radius: 16px;
+    width: 60px;
+    height: 48px;
+  }
+
+  .room-wrap {
+    grid-template-columns: minmax(220px, 32%) minmax(0, 1fr);
+    padding: 20px;
   }
 }

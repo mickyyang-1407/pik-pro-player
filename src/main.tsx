@@ -5,9 +5,8 @@ import './styles.css';
 type Speaker = {
   label: string;
   group: 'front' | 'side' | 'rear' | 'top' | 'lfe';
-  x: number;
-  y: number;
-  z: number;
+  left: number;
+  top: number;
 };
 
 type Note = {
@@ -21,18 +20,27 @@ type Note = {
 const durationSeconds = 214;
 
 const speakers: Speaker[] = [
-  { label: 'L', group: 'front', x: -0.72, y: -0.55, z: 0.25 },
-  { label: 'C', group: 'front', x: 0, y: -0.68, z: 0.22 },
-  { label: 'R', group: 'front', x: 0.72, y: -0.55, z: 0.25 },
-  { label: 'LFE', group: 'lfe', x: -0.28, y: -0.78, z: 0.02 },
-  { label: 'Ls', group: 'side', x: -0.95, y: 0.04, z: 0.18 },
-  { label: 'Rs', group: 'side', x: 0.95, y: 0.04, z: 0.18 },
-  { label: 'Lrs', group: 'rear', x: -0.72, y: 0.68, z: 0.2 },
-  { label: 'Rrs', group: 'rear', x: 0.72, y: 0.68, z: 0.2 },
-  { label: 'Ltf', group: 'top', x: -0.48, y: -0.32, z: 0.82 },
-  { label: 'Rtf', group: 'top', x: 0.48, y: -0.32, z: 0.82 },
-  { label: 'Ltr', group: 'top', x: -0.48, y: 0.42, z: 0.82 },
-  { label: 'Rtr', group: 'top', x: 0.48, y: 0.42, z: 0.82 },
+  { label: 'L', group: 'front', left: 34, top: 22 },
+  { label: 'C', group: 'front', left: 50, top: 22 },
+  { label: 'R', group: 'front', left: 66, top: 22 },
+  { label: 'LFE', group: 'lfe', left: 42, top: 32 },
+  { label: 'Ls', group: 'side', left: 26, top: 50 },
+  { label: 'Rs', group: 'side', left: 74, top: 50 },
+  { label: 'Lrs', group: 'rear', left: 34, top: 78 },
+  { label: 'Rrs', group: 'rear', left: 66, top: 78 },
+  { label: 'Ltf', group: 'top', left: 42, top: 41 },
+  { label: 'Rtf', group: 'top', left: 58, top: 41 },
+  { label: 'Ltr', group: 'top', left: 42, top: 61 },
+  { label: 'Rtr', group: 'top', left: 58, top: 61 },
+];
+
+const meterRows = [
+  { label: 'L', value: 72 },
+  { label: 'C', value: 78 },
+  { label: 'R', value: 69 },
+  { label: 'Ls', value: 42 },
+  { label: 'Rs', value: 45 },
+  { label: 'Top', value: 36 },
 ];
 
 const seedNotes: Note[] = [
@@ -59,15 +67,6 @@ function formatTime(seconds: number) {
   return `${minutes.toString().padStart(2, '0')}:${wholeSeconds.toString().padStart(2, '0')}`;
 }
 
-function speakerPosition(speaker: Speaker) {
-  const depth = 1 + speaker.y * 0.16 - speaker.z * 0.12;
-  return {
-    left: 50 + speaker.x * 33 * depth,
-    top: 51 + speaker.y * 30 * depth - speaker.z * 22,
-    scale: 1.08 - speaker.y * 0.14 + speaker.z * 0.1,
-  };
-}
-
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
@@ -75,6 +74,7 @@ function App() {
   const [draft, setDraft] = createSignal('');
   const [notes, setNotes] = createSignal(seedNotes);
   const [activeSpeaker, setActiveSpeaker] = createSignal('C');
+  const [soloGroup, setSoloGroup] = createSignal<Speaker['group'] | null>(null);
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
   const [isDraggingTimeline, setIsDraggingTimeline] = createSignal(false);
@@ -195,47 +195,105 @@ function App() {
           <div class="speaker-header">
             <div>
               <span>Speaker Room</span>
-              <strong>3D Monitoring View</strong>
+              <strong>Top Monitoring View</strong>
             </div>
             <div class="group-pills">
-              <For each={['front', 'side', 'rear', 'top', 'lfe']}>
-                {(group) => <button type="button">{group}</button>}
+              <For each={[
+                { id: 'front' as const, label: 'Front' },
+                { id: 'side' as const, label: 'Side' },
+                { id: 'rear' as const, label: 'Rear' },
+                { id: 'top' as const, label: 'Top' },
+                { id: 'lfe' as const, label: 'LFE' },
+              ]}>
+                {(group) => (
+                  <button
+                    type="button"
+                    classList={{ 'is-solo': soloGroup() === group.id }}
+                    onClick={() => {
+                      setSoloGroup((current) => (current === group.id ? null : group.id));
+                      setActiveSpeaker('');
+                    }}
+                  >
+                    {group.label}
+                  </button>
+                )}
               </For>
             </div>
           </div>
 
           <div class="room-wrap">
-            <div class="room-plane">
-              <div class="screen-line">SCREEN</div>
-              <div class="listener-dot">
-                <span />
+            <section class="analysis-panel" aria-label="Metering and loudness">
+              <div class="analysis-heading">
+                <span>Metering</span>
+                <strong>Loudness</strong>
               </div>
-              <For each={speakers}>
-                {(speaker) => {
-                  const pos = speakerPosition(speaker);
-                  const isActive = () => activeSpeaker() === speaker.label;
-                  return (
-                    <button
-                      type="button"
-                      class="speaker-button"
-                      classList={{
-                        'is-height': speaker.group === 'top',
-                        'is-active': isActive(),
-                      }}
-                      style={{
-                        left: `${pos.left}%`,
-                        top: `${pos.top}%`,
-                        transform: `translate(-50%, -50%) scale(${pos.scale})`,
-                      }}
-                      onClick={() => setActiveSpeaker(speaker.label)}
-                      aria-pressed={isActive()}
-                    >
-                      {speaker.label}
-                    </button>
-                  );
-                }}
-              </For>
-            </div>
+              <div class="loudness-readout">
+                <span>Integrated</span>
+                <strong>-14.2 LUFS</strong>
+              </div>
+              <div class="loudness-stats">
+                <div>
+                  <span>Short</span>
+                  <strong>-12.8</strong>
+                </div>
+                <div>
+                  <span>True Peak</span>
+                  <strong>-1.1</strong>
+                </div>
+              </div>
+              <div class="meter-list">
+                <For each={meterRows}>
+                  {(meter) => (
+                    <div class="meter-row">
+                      <span>{meter.label}</span>
+                      <div>
+                        <i style={{ width: `${meter.value}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </section>
+
+            <section class="speaker-view" aria-label="Top-down speaker view">
+              <div class="speaker-view-title">
+                <span>Speaker View</span>
+                <strong>{soloGroup() ? `${soloGroup()?.toUpperCase()} Solo` : activeSpeaker() || 'All'}</strong>
+              </div>
+              <div class="room-plane">
+                <div class="screen-line">SCREEN</div>
+                <div class="listener-dot">
+                  <span />
+                </div>
+                <For each={speakers}>
+                  {(speaker) => {
+                    const isActive = () => activeSpeaker() === speaker.label || soloGroup() === speaker.group;
+                    return (
+                      <button
+                        type="button"
+                        class="speaker-button"
+                        classList={{
+                          'is-height': speaker.group === 'top',
+                          'is-lfe': speaker.group === 'lfe',
+                          'is-active': isActive(),
+                        }}
+                        style={{
+                          left: `${speaker.left}%`,
+                          top: `${speaker.top}%`,
+                        }}
+                        onClick={() => {
+                          setSoloGroup(null);
+                          setActiveSpeaker(speaker.label);
+                        }}
+                        aria-pressed={isActive()}
+                      >
+                        {speaker.label}
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </section>
           </div>
 
           <div class="timeline-card">

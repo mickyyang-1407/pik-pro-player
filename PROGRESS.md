@@ -58,3 +58,28 @@ Define Phase 1 from scratch for Pik Pro Player:
 ### Notes
 
 - This is still a frontend prototype. It does not yet connect to real playback, import, SQLite, or audio meters.
+
+## 2026-06-30 Phase 1 Canvas Fixes
+
+### Completed
+
+- Changed the speaker area from angled perspective to a direct top-down view.
+- Made group buttons function as solo selectors:
+  - Front: L/C/R
+  - Side: Ls/Rs
+  - Rear: Lrs/Rrs
+  - Top: Ltf/Rtf/Ltr/Rtr
+  - LFE: independent solo
+- Split the main speaker stage into two blocks:
+  - Left: Metering and Loudness placeholder panel
+  - Right: Speaker View
+- Reworked speaker layout into a rectangular room:
+  - Front row: L/C/R
+  - LFE between L and C, slightly behind the front row
+  - Side and rear speakers aligned as separate rows
+  - Top speakers form a square around the listener
+
+### Verification
+
+- `npm run build`: PASS.
+- `npm run tauri:build`: PASS.
