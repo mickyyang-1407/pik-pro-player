@@ -53,16 +53,14 @@ button {
 }
 
 .scaled-app {
-  width: calc(100% / var(--ui-zoom));
-  height: calc(100% / var(--ui-zoom));
-  min-width: 1360px;
-  min-height: 860px;
+  width: 1500px;
+  height: 940px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 22px;
   gap: 16px;
-  transform: scale(var(--ui-zoom));
   transform-origin: top left;
+  transform: scale(var(--ui-zoom));
 }
 
 .topbar {

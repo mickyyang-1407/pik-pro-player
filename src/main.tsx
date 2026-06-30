@@ -1,6 +1,10 @@
 import { For, createMemo, createSignal, onCleanup } from 'solid-js';
 import { render } from 'solid-js/web';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import './styles.css';
+
+const BASE_W = 1500;
+const BASE_H = 940;
 
 type Speaker = {
   label: string;
@@ -189,7 +193,14 @@ function App() {
         <div class="topbar-controls">
           <label class="zoom-control">
             <span>Zoom</span>
-            <select value={zoom()} onChange={(event) => setZoom(Number(event.currentTarget.value))}>
+            <select value={zoom()} onChange={(event) => {
+              const z = Number(event.currentTarget.value);
+              setZoom(z);
+              getCurrentWindow().setSize(new LogicalSize(
+                Math.round(BASE_W * z / 100),
+                Math.round(BASE_H * z / 100),
+              ));
+            }}>
               <For each={zoomOptions}>{(option) => <option value={option}>{option}%</option>}</For>
             </select>
           </label>
@@ -303,7 +314,7 @@ function App() {
                           }}
                           style={{ 'grid-area': speaker.area }}
                           onClick={() => {
-                            setSoloGroup(null);
+                            setSoloGroups(new Set());
                             setActiveSpeaker((cur) => (cur === speaker.label ? '' : speaker.label));
                           }}
                           aria-pressed={isActive()}
