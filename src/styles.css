@@ -471,7 +471,10 @@ button {
 
 .speaker-grid {
   position: absolute;
-  inset: 54px 14px 14px;
+  top: 54px;
+  bottom: 14px;
+  left: calc(50% - 280px);
+  width: 560px;
   display: grid;
   grid-template-columns: 2fr 1fr 0.7fr 1fr 0.7fr 1fr 2fr;
   grid-template-rows: 1fr 3fr 1fr 1fr 1fr 7fr;
