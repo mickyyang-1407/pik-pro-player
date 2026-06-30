@@ -1,4 +1,36 @@
 {
-  "selectedShapes": [],
-  "updatedAt": "2026-06-30T06:37:36.532Z"
+  "selectedShapes": [
+    {
+      "id": "shape:qHw9evvaQ-FqcJVlQIHev",
+      "type": "image",
+      "parentId": "page:page",
+      "x": 189,
+      "y": 484,
+      "rotation": 0,
+      "meta": {},
+      "isAiImageHolder": false,
+      "props": {
+        "w": 1612,
+        "h": 1052,
+        "assetId": "asset:-1991150172",
+        "playing": true,
+        "url": "",
+        "crop": null,
+        "flipX": false,
+        "flipY": false,
+        "altText": ""
+      },
+      "asset": {
+        "id": "asset:-1991150172",
+        "type": "image",
+        "name": "asset--1991150172.png",
+        "src": "/page-assets/page/asset--1991150172.png",
+        "w": 1612,
+        "h": 1052,
+        "mimeType": "image/png",
+        "fileSize": 2144615
+      }
+    }
+  ],
+  "updatedAt": "2026-06-30T07:11:13.730Z"
 }

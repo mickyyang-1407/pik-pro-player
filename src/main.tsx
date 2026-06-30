@@ -75,7 +75,7 @@ function App() {
   const [draft, setDraft] = createSignal('');
   const [notes, setNotes] = createSignal(seedNotes);
   const [activeSpeaker, setActiveSpeaker] = createSignal('C');
-  const [soloGroup, setSoloGroup] = createSignal<Speaker['group'] | null>(null);
+  const [soloGroups, setSoloGroups] = createSignal<Set<Speaker['group']>>(new Set());
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
   const [isDraggingTimeline, setIsDraggingTimeline] = createSignal(false);
@@ -218,9 +218,19 @@ function App() {
                 {(group) => (
                   <button
                     type="button"
-                    classList={{ 'is-solo': soloGroup() === group.id }}
-                    onClick={() => {
-                      setSoloGroup((current) => (current === group.id ? null : group.id));
+                    classList={{ 'is-solo': soloGroups().has(group.id) }}
+                    onClick={(e) => {
+                      setSoloGroups((prev) => {
+                        const next = new Set(prev);
+                        if (e.shiftKey) {
+                          if (next.has(group.id)) next.delete(group.id);
+                          else next.add(group.id);
+                        } else {
+                          if (next.size === 1 && next.has(group.id)) next.clear();
+                          else { next.clear(); next.add(group.id); }
+                        }
+                        return next;
+                      });
                       setActiveSpeaker('');
                     }}
                   >
@@ -228,6 +238,9 @@ function App() {
                   </button>
                 )}
               </For>
+              <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSoloGroups(new Set()); setActiveSpeaker(''); }}>
+                Clear
+              </button>
             </div>
           </div>
 
@@ -268,7 +281,7 @@ function App() {
             <section class="speaker-view" aria-label="Top-down speaker view">
               <div class="speaker-view-title">
                 <span>Speaker View</span>
-                <strong>{soloGroup() ? `${soloGroup()?.toUpperCase()} Solo` : activeSpeaker() || 'All'}</strong>
+                <strong>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ' Solo' : activeSpeaker() || 'All'}</strong>
               </div>
               <div class="room-plane">
                 <div class="screen-line">SCREEN</div>
@@ -278,7 +291,7 @@ function App() {
                   </div>
                   <For each={speakers}>
                     {(speaker) => {
-                      const isActive = () => activeSpeaker() === speaker.label || soloGroup() === speaker.group;
+                      const isActive = () => activeSpeaker() === speaker.label || soloGroups().has(speaker.group);
                       return (
                         <button
                           type="button"
@@ -291,7 +304,7 @@ function App() {
                           style={{ 'grid-area': speaker.area }}
                           onClick={() => {
                             setSoloGroup(null);
-                            setActiveSpeaker(speaker.label);
+                            setActiveSpeaker((cur) => (cur === speaker.label ? '' : speaker.label));
                           }}
                           aria-pressed={isActive()}
                         >
@@ -311,9 +324,6 @@ function App() {
                 <span>Locked Range</span>
                 <strong>{selectedRangeLabel()}</strong>
               </div>
-              <button type="button" onClick={() => setLockedRange({ start: 0, end: 0 })}>
-                Clear
-              </button>
             </div>
             <div
               ref={timelineEl}

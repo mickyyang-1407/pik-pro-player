@@ -221,6 +221,24 @@ button {
   box-shadow: var(--tight-shadow);
 }
 
+.clear-pill {
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.clear-pill:hover {
+  background: #ffeaea;
+  color: #c0392b;
+}
+
 .group-pills button.is-solo {
   background: var(--cyan);
   color: #ffffff;
@@ -414,16 +432,17 @@ button {
 
 .speaker-grid {
   position: absolute;
-  inset: 17% 9% 14%;
+  inset: 54px 14px 14px;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-template-rows: 72px 68px 78px 72px 76px;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: 1fr 1fr 1fr 1fr 1fr 2.2fr;
   grid-template-areas:
-    ". left . center . right ."
-    ". . lfe . . . ."
-    "leftSide . leftTopFront listener rightTopFront . rightSide"
-    ". . leftTopRear . rightTopRear . ."
-    ". leftRear . . . rightRear .";
+    ".        left     .            center   .             right     ."
+    ".        .        .            lfe      .             .         ."
+    ".        .        leftTopFront .        rightTopFront .         ."
+    "leftSide .        .            listener .             .         rightSide"
+    ".        .        leftTopRear  .        rightTopRear  .         ."
+    ".        leftRear .            .        .             rightRear .";
   align-items: center;
   justify-items: center;
 }
@@ -476,12 +495,22 @@ button {
   z-index: -1;
 }
 
-.speaker-button:hover,
+.speaker-button:hover {
+  background: var(--cyan-soft);
+  border-color: var(--cyan);
+  color: var(--cyan-strong);
+  box-shadow: 0 8px 20px rgba(0, 143, 176, 0.16);
+}
+
 .speaker-button.is-active {
   background: var(--cyan);
   border-color: var(--cyan-strong);
   color: #ffffff;
   box-shadow: 0 12px 34px rgba(0, 143, 176, 0.34);
+}
+
+.speaker-button.is-active:hover {
+  background: var(--cyan-strong);
 }
 
 .speaker-button:hover::after,
@@ -495,10 +524,12 @@ button {
 }
 
 .speaker-button.is-lfe {
-  width: 84px;
+  width: 62px;
+  height: 36px;
   max-width: 100%;
   border-color: rgba(246, 174, 45, 0.42);
   color: #9d6b00;
+  font-size: 12px;
 }
 
 .timeline-card {
