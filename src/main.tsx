@@ -5,8 +5,7 @@ import './styles.css';
 type Speaker = {
   label: string;
   group: 'front' | 'side' | 'rear' | 'top' | 'lfe';
-  left: number;
-  top: number;
+  area: string;
 };
 
 type Note = {
@@ -18,20 +17,21 @@ type Note = {
 };
 
 const durationSeconds = 214;
+const zoomOptions = [50, 75, 100, 125, 150];
 
 const speakers: Speaker[] = [
-  { label: 'L', group: 'front', left: 34, top: 22 },
-  { label: 'C', group: 'front', left: 50, top: 22 },
-  { label: 'R', group: 'front', left: 66, top: 22 },
-  { label: 'LFE', group: 'lfe', left: 42, top: 32 },
-  { label: 'Ls', group: 'side', left: 26, top: 50 },
-  { label: 'Rs', group: 'side', left: 74, top: 50 },
-  { label: 'Lrs', group: 'rear', left: 34, top: 78 },
-  { label: 'Rrs', group: 'rear', left: 66, top: 78 },
-  { label: 'Ltf', group: 'top', left: 42, top: 41 },
-  { label: 'Rtf', group: 'top', left: 58, top: 41 },
-  { label: 'Ltr', group: 'top', left: 42, top: 61 },
-  { label: 'Rtr', group: 'top', left: 58, top: 61 },
+  { label: 'L', group: 'front', area: 'left' },
+  { label: 'C', group: 'front', area: 'center' },
+  { label: 'R', group: 'front', area: 'right' },
+  { label: 'LFE', group: 'lfe', area: 'lfe' },
+  { label: 'Ls', group: 'side', area: 'leftSide' },
+  { label: 'Rs', group: 'side', area: 'rightSide' },
+  { label: 'Lrs', group: 'rear', area: 'leftRear' },
+  { label: 'Rrs', group: 'rear', area: 'rightRear' },
+  { label: 'Ltf', group: 'top', area: 'leftTopFront' },
+  { label: 'Rtf', group: 'top', area: 'rightTopFront' },
+  { label: 'Ltr', group: 'top', area: 'leftTopRear' },
+  { label: 'Rtr', group: 'top', area: 'rightTopRear' },
 ];
 
 const meterRows = [
@@ -69,6 +69,7 @@ function formatTime(seconds: number) {
 
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
+  const [zoom, setZoom] = createSignal(100);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [draft, setDraft] = createSignal('');
@@ -178,15 +179,24 @@ function App() {
   };
 
   return (
-    <main class="review-app">
+    <main class="review-app" style={{ '--ui-zoom': `${zoom() / 100}` }}>
+      <div class="scaled-app">
       <header class="topbar">
         <div>
           <p class="eyebrow">Pik Pro Player</p>
           <h1>Mix Review Workspace</h1>
         </div>
-        <div class="topbar-meta">
-          <span>Dolby 7.1.4 draft</span>
-          <strong>{selectedRangeLabel()}</strong>
+        <div class="topbar-controls">
+          <label class="zoom-control">
+            <span>Zoom</span>
+            <select value={zoom()} onChange={(event) => setZoom(Number(event.currentTarget.value))}>
+              <For each={zoomOptions}>{(option) => <option value={option}>{option}%</option>}</For>
+            </select>
+          </label>
+          <div class="topbar-meta">
+            <span>Dolby 7.1.4 draft</span>
+            <strong>{selectedRangeLabel()}</strong>
+          </div>
         </div>
       </header>
 
@@ -262,36 +272,35 @@ function App() {
               </div>
               <div class="room-plane">
                 <div class="screen-line">SCREEN</div>
-                <div class="listener-dot">
-                  <span />
+                <div class="speaker-grid">
+                  <div class="listener-dot">
+                    <span />
+                  </div>
+                  <For each={speakers}>
+                    {(speaker) => {
+                      const isActive = () => activeSpeaker() === speaker.label || soloGroup() === speaker.group;
+                      return (
+                        <button
+                          type="button"
+                          class="speaker-button"
+                          classList={{
+                            'is-height': speaker.group === 'top',
+                            'is-lfe': speaker.group === 'lfe',
+                            'is-active': isActive(),
+                          }}
+                          style={{ 'grid-area': speaker.area }}
+                          onClick={() => {
+                            setSoloGroup(null);
+                            setActiveSpeaker(speaker.label);
+                          }}
+                          aria-pressed={isActive()}
+                        >
+                          {speaker.label}
+                        </button>
+                      );
+                    }}
+                  </For>
                 </div>
-                <For each={speakers}>
-                  {(speaker) => {
-                    const isActive = () => activeSpeaker() === speaker.label || soloGroup() === speaker.group;
-                    return (
-                      <button
-                        type="button"
-                        class="speaker-button"
-                        classList={{
-                          'is-height': speaker.group === 'top',
-                          'is-lfe': speaker.group === 'lfe',
-                          'is-active': isActive(),
-                        }}
-                        style={{
-                          left: `${speaker.left}%`,
-                          top: `${speaker.top}%`,
-                        }}
-                        onClick={() => {
-                          setSoloGroup(null);
-                          setActiveSpeaker(speaker.label);
-                        }}
-                        aria-pressed={isActive()}
-                      >
-                        {speaker.label}
-                      </button>
-                    );
-                  }}
-                </For>
               </div>
             </section>
           </div>
@@ -406,6 +415,7 @@ function App() {
           )}
         </aside>
       </section>
+      </div>
     </main>
   );
 }

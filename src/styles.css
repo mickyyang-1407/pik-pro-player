@@ -26,7 +26,7 @@ body,
 }
 
 body {
-  min-width: 980px;
+  min-width: 1280px;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 248, 251, 0.98)),
@@ -48,10 +48,21 @@ button {
 
 .review-app {
   height: 100%;
+  overflow: auto;
+  background: transparent;
+}
+
+.scaled-app {
+  width: calc(100% / var(--ui-zoom));
+  height: calc(100% / var(--ui-zoom));
+  min-width: 1360px;
+  min-height: 860px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 22px;
   gap: 16px;
+  transform: scale(var(--ui-zoom));
+  transform-origin: top left;
 }
 
 .topbar {
@@ -85,6 +96,37 @@ button {
 .topbar-meta {
   min-width: 220px;
   text-align: right;
+}
+
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.zoom-control {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
+}
+
+.zoom-control span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.zoom-control select {
+  height: 32px;
+  min-width: 86px;
+  border: 1px solid rgba(0, 167, 200, 0.22);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--cyan-strong);
+  font-weight: 800;
+  outline: none;
+  text-align: center;
 }
 
 .topbar-meta span,
@@ -188,7 +230,7 @@ button {
 .room-wrap {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 30%) minmax(0, 1fr);
   gap: 18px;
   padding: 26px 28px;
 }
@@ -322,7 +364,7 @@ button {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 360px;
+  min-height: 440px;
   border: 1px solid rgba(0, 167, 200, 0.22);
   border-radius: 8px;
   background:
@@ -341,7 +383,7 @@ button {
 }
 
 .room-plane::before {
-  inset: 16% 19%;
+  inset: 16% 17% 13%;
   border: 1px dashed rgba(0, 167, 200, 0.24);
   border-radius: 8px;
 }
@@ -370,17 +412,32 @@ button {
   padding-top: 8px;
 }
 
-.listener-dot {
+.speaker-grid {
   position: absolute;
-  left: 50%;
-  top: 51%;
-  width: 74px;
-  height: 74px;
-  transform: translate(-50%, -50%);
+  inset: 17% 9% 14%;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: 72px 68px 78px 72px 76px;
+  grid-template-areas:
+    ". left . center . right ."
+    ". . lfe . . . ."
+    "leftSide . leftTopFront listener rightTopFront . rightSide"
+    ". . leftTopRear . rightTopRear . ."
+    ". leftRear . . . rightRear .";
+  align-items: center;
+  justify-items: center;
+}
+
+.listener-dot {
+  grid-area: listener;
+  position: relative;
+  width: 72px;
+  height: 72px;
   border: 1px solid rgba(0, 167, 200, 0.22);
   border-radius: 50%;
   display: grid;
   place-items: center;
+  z-index: 1;
 }
 
 .listener-dot span {
@@ -392,9 +449,10 @@ button {
 }
 
 .speaker-button {
-  position: absolute;
-  width: 72px;
-  height: 54px;
+  position: relative;
+  width: 78px;
+  max-width: 100%;
+  height: 48px;
   border-radius: 8px;
   background: #ffffff;
   border: 1px solid rgba(0, 167, 200, 0.28);
@@ -437,7 +495,8 @@ button {
 }
 
 .speaker-button.is-lfe {
-  width: 78px;
+  width: 84px;
+  max-width: 100%;
   border-color: rgba(246, 174, 45, 0.42);
   color: #9d6b00;
 }
@@ -710,12 +769,12 @@ button {
   }
 
   .speaker-button {
-    width: 60px;
-    height: 48px;
+    width: 66px;
+    height: 44px;
   }
 
   .room-wrap {
-    grid-template-columns: minmax(220px, 32%) minmax(0, 1fr);
+    grid-template-columns: minmax(260px, 30%) minmax(0, 1fr);
     padding: 20px;
   }
 }

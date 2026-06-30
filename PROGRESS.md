@@ -83,3 +83,53 @@ Define Phase 1 from scratch for Pik Pro Player:
 
 - `npm run build`: PASS.
 - `npm run tauri:build`: PASS.
+
+## 2026-06-30 Speaker Position Adjustment
+
+### Completed
+
+- Adjusted the top-down speaker coordinates to match Micky's provided reference image.
+- Front row now places L/C/R across the upper center.
+- LFE now sits between L and C, slightly below the front row.
+- Ls/Rs now sit on the side row.
+- Lrs/Rrs now sit on the rear row.
+- Top speakers now form a square around the listener.
+- Listener position was moved down to sit between the top-front and top-rear speakers.
+
+### Verification
+
+- `npm run build`: PASS.
+- `npm run tauri:build`: PASS.
+
+## 2026-06-30 Speaker Layout Correction
+
+### Problem
+
+- The previous implementation used absolute percentage coordinates for speakers.
+- That made the speaker layout fragile: resizing or changing the available panel width caused the room to distort.
+- Listener could be covered by top speakers, and the speaker group was not reliably centered.
+
+### Correction Direction
+
+- Replace percentage-coordinate placement with a calculated CSS grid layout using named speaker cells.
+- Keep the listener in its own center cell so no speaker can overlap it.
+- Ensure the first app open shows the full Speaker View and complete Metering/Loudness panel.
+- Disable free window resizing in Tauri; expose fixed UI zoom choices instead: 50%, 75%, 100%, 125%, 150%.
+
+### Completed
+
+- Replaced speaker placement with CSS grid named areas.
+- Added a fixed listener grid cell so speakers cannot overlap listener.
+- Added a fixed UI zoom selector: 50%, 75%, 100%, 125%, 150%.
+- Set the Tauri window to a fixed 1500x940, non-resizable desktop window.
+- Adjusted the speaker grid so all speakers are visible on first open with the Metering/Loudness panel also visible.
+
+### Verification
+
+- `npm run build`: PASS.
+- `npm run tauri:build`: PASS.
+- Visual screenshot check: PASS; all speakers are visible inside Speaker View, and Metering/Loudness is visible on first open.
+
+### Pause
+
+- Micky asked to pause immediately before final acceptance of this layout. See `HANDOFF.md`.

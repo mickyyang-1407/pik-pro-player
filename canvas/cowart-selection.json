@@ -1,36 +1,4 @@
 {
-  "selectedShapes": [
-    {
-      "id": "shape:26KKFMLRL3nD81n4VFH8A",
-      "type": "image",
-      "parentId": "page:page",
-      "x": 396.5,
-      "y": 348.5,
-      "rotation": 0,
-      "meta": {},
-      "isAiImageHolder": false,
-      "props": {
-        "w": 1625,
-        "h": 1137,
-        "assetId": "asset:-1289262407",
-        "playing": true,
-        "url": "",
-        "crop": null,
-        "flipX": false,
-        "flipY": false,
-        "altText": ""
-      },
-      "asset": {
-        "id": "asset:-1289262407",
-        "type": "image",
-        "name": "asset--1289262407.png",
-        "src": "/page-assets/page/asset--1289262407.png",
-        "w": 1625,
-        "h": 1137,
-        "mimeType": "image/png",
-        "fileSize": 2277250
-      }
-    }
-  ],
-  "updatedAt": "2026-06-30T05:47:45.561Z"
+  "selectedShapes": [],
+  "updatedAt": "2026-06-30T06:37:36.532Z"
 }
