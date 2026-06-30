@@ -19,10 +19,12 @@
 - `cargo check` in `src-tauri`: PASS.
 - `npm run tauri:build`: PASS.
 - Built app: `src-tauri/target/release/bundle/macos/Pik Pro Player.app`
+- GitHub remote: `git@github.com:mickyyang-1407/pik-pro-player.git`
+- Baseline commit: `3ead1d8 chore: reset clean pik pro player baseline`
 
 ### Current Status
 
-Phase 0 reset baseline is complete.
+Phase 0 reset baseline is complete and pushed to GitHub `main`.
 
 ### Next Product Work After Baseline
 
