@@ -40,12 +40,23 @@ const speakers: Speaker[] = [
 
 const meterRows = [
   { label: 'L', value: 72 },
-  { label: 'C', value: 78 },
   { label: 'R', value: 69 },
+  { label: 'C', value: 78 },
+  { label: 'LFE', value: 52 },
   { label: 'Ls', value: 42 },
   { label: 'Rs', value: 45 },
-  { label: 'Top', value: 36 },
+  { label: 'Lrs', value: 38 },
+  { label: 'Rrs', value: 36 },
+  { label: 'Ltf', value: 31 },
+  { label: 'Rtf', value: 33 },
+  { label: 'Ltr', value: 28 },
+  { label: 'Rtr', value: 30 },
 ];
+
+const loudnessTicks = ['-inf', '-54', '-45', '-36', '-16', '-9', '-6', '-3', '0'];
+const ppmTicks = ['-1', '-6', '-9', '-18', '-24', '-27', '-36', '-45', '-54', '-inf'];
+
+const loudnessPosition = (value: number) => `${Math.max(0, Math.min(100, ((value + 60) / 60) * 100))}%`;
 
 const seedNotes: Note[] = [
   {
@@ -81,6 +92,8 @@ function App() {
   const [activeSpeakers, setActiveSpeakers] = createSignal<Set<string>>(new Set(['C']));
   const [soloGroups, setSoloGroups] = createSignal<Set<Speaker['group']>>(new Set());
   const [speakerMode, setSpeakerMode] = createSignal<'solo' | 'mute'>('solo');
+  const [lufsEnabled, setLufsEnabled] = createSignal(true);
+  const [ppmEnabled, setPpmEnabled] = createSignal(true);
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
   const [isDraggingTimeline, setIsDraggingTimeline] = createSignal(false);
@@ -288,41 +301,111 @@ function App() {
           <div class="room-wrap">
             <section class="analysis-panel" aria-label="Metering and loudness">
               <div class="analysis-heading">
-                <span>Metering</span>
-                <strong>Loudness</strong>
+                <div>
+                  <span>Metering</span>
+                  <strong>Loudness</strong>
+                </div>
+                <button
+                  type="button"
+                  classList={{ 'is-enabled': lufsEnabled() }}
+                  onClick={() => setLufsEnabled((enabled) => !enabled)}
+                >
+                  LUFS
+                </button>
               </div>
-              <div class="loudness-readout">
-                <span>Integrated</span>
-                <strong>-14.2 LUFS</strong>
+              <div class="loudness-readout" classList={{ 'is-disabled': !lufsEnabled() }}>
+                <div>
+                  <span>Integrated</span>
+                  <strong>{lufsEnabled() ? '-14.2 LUFS' : '--'}</strong>
+                </div>
+                <div>
+                  <span>Range</span>
+                  <strong>{lufsEnabled() ? '7.6 LU' : '--'}</strong>
+                </div>
               </div>
-              <div class="loudness-stats">
+              <div class="loudness-stats" classList={{ 'is-disabled': !lufsEnabled() }}>
                 <div>
                   <span>Short</span>
-                  <strong>-12.8</strong>
+                  <strong>{lufsEnabled() ? '-12.8' : '--'}</strong>
                 </div>
                 <div>
                   <span>True Peak</span>
-                  <strong>-1.1</strong>
+                  <strong>{lufsEnabled() ? '-1.1' : '--'}</strong>
                 </div>
               </div>
-              <div class="meter-list">
-                <For each={meterRows}>
-                  {(meter) => (
-                    <div class="meter-row">
-                      <span>{meter.label}</span>
-                      <div>
-                        <i style={{ width: `${meter.value}%` }} />
-                      </div>
-                    </div>
-                  )}
-                </For>
+              <div class="loudness-bar-card" classList={{ 'is-disabled': !lufsEnabled() }}>
+                <div class="loudness-bar-head">
+                  <span>LUFS Bar</span>
+                  <strong>Ref -16</strong>
+                </div>
+                <div class="loudness-scale">
+                  <div class="loudness-track" />
+                  <div class="loudness-current" style={{ left: lufsEnabled() ? loudnessPosition(-14.2) : '0%' }} />
+                  <div class="loudness-target" style={{ left: loudnessPosition(-16) }} />
+                  <For each={loudnessTicks}>
+                    {(tick) => (
+                      <span class="loudness-tick" classList={{ 'is-target': tick === '-16' }} style={{ left: tick === '-inf' ? '0%' : loudnessPosition(Number(tick)) }}>
+                        {tick}
+                      </span>
+                    )}
+                  </For>
+                </div>
+                <div class="loudness-max-stats">
+                  <div>
+                    <span>Short Term Max</span>
+                    <strong>{lufsEnabled() ? '-10.9' : '--'}</strong>
+                  </div>
+                  <div>
+                    <span>Momentary Max</span>
+                    <strong>{lufsEnabled() ? '-9.8' : '--'}</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="meter-list" classList={{ 'is-disabled': !ppmEnabled() }}>
+                <div class="meter-head">
+                  <div>
+                    <span>PPM</span>
+                    <strong>12 Channels</strong>
+                  </div>
+                  <button
+                    type="button"
+                    classList={{ 'is-enabled': ppmEnabled() }}
+                    onClick={() => setPpmEnabled((enabled) => !enabled)}
+                  >
+                    PPM
+                  </button>
+                </div>
+                <div class="ppm-grid">
+                  <div class="ppm-scale">
+                    <For each={ppmTicks}>
+                      {(tick) => <span>{tick}</span>}
+                    </For>
+                  </div>
+                  <div class="ppm-meters">
+                    <For each={meterRows}>
+                      {(meter) => (
+                        <div class="ppm-channel">
+                          <div class="ppm-slot">
+                            <i style={{ height: ppmEnabled() ? `${meter.value}%` : '0%' }} />
+                          </div>
+                          <span>{meter.label}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                  <div class="ppm-grid-lines">
+                    <For each={ppmTicks}>
+                      {() => <i />}
+                    </For>
+                  </div>
+                </div>
               </div>
             </section>
 
             <section class="speaker-view" aria-label="Top-down speaker view">
               <div class="speaker-view-title">
                 <span>Speaker View</span>
-                <strong classList={{ 'is-mute-label': soloGroups().size > 0 && speakerMode() === 'mute' }}>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') : 'All'}</strong>
+                <strong classList={{ 'is-mute-label': (soloGroups().size > 0 || activeSpeakers().size > 0) && speakerMode() === 'mute' }}>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : 'All'}</strong>
               </div>
               <div class="room-plane" ref={roomPlaneEl}>
                 <div class="screen-line">SCREEN</div>
