@@ -158,7 +158,7 @@ button {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   background: linear-gradient(180deg, #ffffff 0%, #f5f9fb 100%);
 }
 
@@ -173,6 +173,8 @@ button {
 
 .speaker-header span,
 .speaker-header strong,
+.speaker-room-title span,
+.speaker-room-title strong,
 .notes-heading span,
 .notes-heading strong,
 .locked-card span,
@@ -182,6 +184,7 @@ button {
 }
 
 .speaker-header span,
+.speaker-room-title span,
 .notes-heading span,
 .locked-card span,
 .note-editor span {
@@ -192,6 +195,7 @@ button {
 }
 
 .speaker-header strong,
+.speaker-room-title strong,
 .notes-heading strong {
   margin-top: 5px;
   font-size: 18px;
@@ -199,17 +203,18 @@ button {
 
 .group-pills {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
 .group-pills button {
-  height: 32px;
-  padding: 0 13px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   background: var(--surface-soft);
   color: var(--cyan-strong);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -220,8 +225,8 @@ button {
 }
 
 .clear-pill {
-  height: 32px;
-  padding: 0 13px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   background: #ffeaea;
   color: #c0392b;
@@ -267,8 +272,8 @@ button {
 }
 
 .mode-toggle button {
-  height: 26px;
-  padding: 0 12px;
+  height: 23px;
+  padding: 0 10px;
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
@@ -294,7 +299,7 @@ button {
   display: grid;
   grid-template-columns: minmax(460px, 38%) minmax(0, 1fr);
   gap: 14px;
-  padding: 22px 24px;
+  padding: 18px 22px;
 }
 
 .analysis-panel,
@@ -307,7 +312,13 @@ button {
 
 .analysis-panel {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(190px, 0.95fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "heading heading"
+    "readout meter"
+    "stats meter"
+    "bar meter";
   gap: 10px;
   padding: 16px;
   overflow: hidden;
@@ -329,6 +340,7 @@ button {
 }
 
 .analysis-heading {
+  grid-area: heading;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -372,8 +384,9 @@ button {
 }
 
 .loudness-readout {
+  grid-area: readout;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding: 12px;
   border-radius: 8px;
@@ -384,16 +397,17 @@ button {
 .loudness-readout strong {
   margin-top: 6px;
   color: var(--cyan-strong);
-  font-size: 28px;
+  font-size: 26px;
   font-variant-numeric: tabular-nums;
 }
 
 .loudness-readout div + div strong {
   color: var(--ink);
-  font-size: 22px;
+  font-size: 18px;
 }
 
 .loudness-stats {
+  grid-area: stats;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
@@ -408,7 +422,7 @@ button {
 .loudness-stats strong {
   margin-top: 5px;
   color: var(--ink);
-  font-size: 19px;
+  font-size: 17px;
 }
 
 .loudness-readout.is-disabled,
@@ -418,6 +432,7 @@ button {
 }
 
 .loudness-bar-card {
+  grid-area: bar;
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(238, 245, 248, 0.68);
@@ -439,7 +454,7 @@ button {
 
 .loudness-scale {
   position: relative;
-  height: 50px;
+  height: 44px;
   margin-top: 7px;
 }
 
@@ -474,7 +489,7 @@ button {
 
 .loudness-tick {
   position: absolute;
-  top: 38px;
+  top: 34px;
   transform: translateX(-50%);
   color: var(--muted);
   font-size: 9px;
@@ -489,22 +504,23 @@ button {
 .loudness-max-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 .loudness-max-stats div {
-  padding-top: 9px;
+  padding-top: 7px;
   border-top: 1px solid rgba(20, 32, 42, 0.08);
 }
 
 .loudness-max-stats strong {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--ink);
-  font-size: 17px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 
 .meter-list {
+  grid-area: meter;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -598,7 +614,7 @@ button {
 .ppm-channel {
   min-width: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) 34px;
   gap: 5px;
   justify-items: center;
 }
@@ -625,14 +641,17 @@ button {
 
 .ppm-channel > span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   line-height: 1;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
 }
 
 .ppm-grid-lines {
   position: absolute;
-  inset: 0 0 15px 42px;
+  inset: 0 0 39px 42px;
   display: grid;
   grid-template-rows: repeat(10, 1fr);
   pointer-events: none;
@@ -644,15 +663,32 @@ button {
 
 .speaker-view {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  padding: 18px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 16px;
+}
+
+.speaker-control-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(20, 32, 42, 0.08);
+}
+
+.speaker-room-title {
+  min-width: 160px;
+}
+
+.speaker-room-title strong {
+  font-size: 17px;
 }
 
 .speaker-view-title {
   display: flex;
   align-items: end;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin: 10px 0 12px;
 }
 
 .speaker-view-title strong {
@@ -990,6 +1026,12 @@ button {
 
 .panel-resizer.is-disabled {
   cursor: default;
+}
+
+.panel-resizer.is-disabled::before,
+.panel-resizer.is-disabled:hover::before {
+  background: rgba(0, 167, 200, 0.14);
+  box-shadow: none;
 }
 
 .notes-panel {

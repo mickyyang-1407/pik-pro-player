@@ -240,64 +240,6 @@ function App() {
 
       <section class="workspace" style={{ 'grid-template-columns': workspaceGrid() }}>
         <section class="speaker-stage" aria-label="Speaker room and timeline">
-          <div class="speaker-header">
-            <div>
-              <span>Speaker Room</span>
-              <strong>Top Monitoring View</strong>
-            </div>
-            <div class="group-pills">
-              <div class="mode-toggle">
-                <button
-                  type="button"
-                  classList={{ 'is-mode-active': speakerMode() === 'solo' }}
-                  onClick={() => setSpeakerMode('solo')}
-                >Solo</button>
-                <button
-                  type="button"
-                  classList={{ 'is-mode-mute': speakerMode() === 'mute' }}
-                  onClick={() => setSpeakerMode('mute')}
-                >Mute</button>
-              </div>
-              <div class="pills-divider" />
-              <For each={[
-                { id: 'front' as const, label: 'Front' },
-                { id: 'side' as const, label: 'Side' },
-                { id: 'rear' as const, label: 'Rear' },
-                { id: 'top' as const, label: 'Top' },
-                { id: 'lfe' as const, label: 'LFE' },
-              ]}>
-                {(group) => (
-                  <button
-                    type="button"
-                    classList={{
-                      'is-solo': soloGroups().has(group.id) && speakerMode() === 'solo',
-                      'is-mute': soloGroups().has(group.id) && speakerMode() === 'mute',
-                    }}
-                    onClick={(e) => {
-                      setSoloGroups((prev) => {
-                        const next = new Set(prev);
-                        if (e.shiftKey) {
-                          if (next.has(group.id)) next.delete(group.id);
-                          else next.add(group.id);
-                        } else {
-                          if (next.size === 1 && next.has(group.id)) next.clear();
-                          else { next.clear(); next.add(group.id); }
-                        }
-                        return next;
-                      });
-                      setActiveSpeakers(new Set<string>());
-                    }}
-                  >
-                    {group.label}
-                  </button>
-                )}
-              </For>
-              <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSoloGroups(new Set<Speaker['group']>()); setActiveSpeakers(new Set<string>()); }}>
-                Clear
-              </button>
-            </div>
-          </div>
-
           <div class="room-wrap">
             <section class="analysis-panel" aria-label="Metering and loudness">
               <div class="analysis-heading">
@@ -403,6 +345,63 @@ function App() {
             </section>
 
             <section class="speaker-view" aria-label="Top-down speaker view">
+              <div class="speaker-control-bar">
+                <div class="speaker-room-title">
+                  <span>Speaker Room</span>
+                  <strong>Top Monitoring View</strong>
+                </div>
+                <div class="group-pills">
+                  <div class="mode-toggle">
+                    <button
+                      type="button"
+                      classList={{ 'is-mode-active': speakerMode() === 'solo' }}
+                      onClick={() => setSpeakerMode('solo')}
+                    >Solo</button>
+                    <button
+                      type="button"
+                      classList={{ 'is-mode-mute': speakerMode() === 'mute' }}
+                      onClick={() => setSpeakerMode('mute')}
+                    >Mute</button>
+                  </div>
+                  <div class="pills-divider" />
+                  <For each={[
+                    { id: 'front' as const, label: 'Front' },
+                    { id: 'side' as const, label: 'Side' },
+                    { id: 'rear' as const, label: 'Rear' },
+                    { id: 'top' as const, label: 'Top' },
+                    { id: 'lfe' as const, label: 'LFE' },
+                  ]}>
+                    {(group) => (
+                      <button
+                        type="button"
+                        classList={{
+                          'is-solo': soloGroups().has(group.id) && speakerMode() === 'solo',
+                          'is-mute': soloGroups().has(group.id) && speakerMode() === 'mute',
+                        }}
+                        onClick={(e) => {
+                          setSoloGroups((prev) => {
+                            const next = new Set(prev);
+                            if (e.shiftKey) {
+                              if (next.has(group.id)) next.delete(group.id);
+                              else next.add(group.id);
+                            } else {
+                              if (next.size === 1 && next.has(group.id)) next.clear();
+                              else { next.clear(); next.add(group.id); }
+                            }
+                            return next;
+                          });
+                          setActiveSpeakers(new Set<string>());
+                        }}
+                      >
+                        {group.label}
+                      </button>
+                    )}
+                  </For>
+                  <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSoloGroups(new Set<Speaker['group']>()); setActiveSpeakers(new Set<string>()); }}>
+                    Clear
+                  </button>
+                </div>
+              </div>
               <div class="speaker-view-title">
                 <span>Speaker View</span>
                 <strong classList={{ 'is-mute-label': (soloGroups().size > 0 || activeSpeakers().size > 0) && speakerMode() === 'mute' }}>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : 'All'}</strong>
@@ -501,9 +500,9 @@ function App() {
         <button
           type="button"
           class="panel-resizer"
-          classList={{ 'is-dragging': isResizingNotes(), 'is-disabled': notesCollapsed() }}
-          onPointerDown={onResizeDown}
-          aria-label="Resize notes panel"
+          classList={{ 'is-disabled': true }}
+          onPointerDown={(event) => event.preventDefault()}
+          aria-label="Notes panel divider"
         />
 
         <aside class="notes-panel" classList={{ 'is-collapsed': notesCollapsed() }}>
