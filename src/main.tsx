@@ -54,7 +54,6 @@ const meterRows = [
 ];
 
 const loudnessTicks = ['-inf', '-54', '-45', '-36', '-16', '-9', '-6', '-3', '0'];
-const ppmTicks = ['-1', '-6', '-9', '-18', '-24', '-27', '-36', '-45', '-54', '-inf'];
 
 const loudnessPosition = (value: number) => `${Math.max(0, Math.min(100, ((value + 60) / 60) * 100))}%`;
 
@@ -104,7 +103,7 @@ function App() {
   const [gridScale, setGridScale] = createSignal(1);
   const BASE_ROOM_W = 560;
 
-  const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : `${notesWidth()}%`));
+  const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : '25%'));
   const workspaceGrid = createMemo(() => `minmax(0, 1fr) 10px ${panelWidth()}`);
 
   const displayRange = createMemo(() => {
@@ -318,26 +317,16 @@ function App() {
                   </button>
                 </div>
                 <div class="ppm-grid">
-                  <div class="ppm-scale">
-                    <For each={ppmTicks}>
-                      {(tick) => <span>{tick}</span>}
-                    </For>
-                  </div>
                   <div class="ppm-meters">
                     <For each={meterRows}>
                       {(meter) => (
                         <div class="ppm-channel">
-                          <div class="ppm-slot">
-                            <i style={{ height: ppmEnabled() ? `${meter.value}%` : '0%' }} />
-                          </div>
                           <span>{meter.label}</span>
+                          <div class="ppm-slot">
+                            <i style={{ width: ppmEnabled() ? `${meter.value}%` : '0%' }} />
+                          </div>
                         </div>
                       )}
-                    </For>
-                  </div>
-                  <div class="ppm-grid-lines">
-                    <For each={ppmTicks}>
-                      {() => <i />}
                     </For>
                   </div>
                 </div>
@@ -346,11 +335,11 @@ function App() {
 
             <section class="speaker-view" aria-label="Top-down speaker view">
               <div class="speaker-control-bar">
-                <div class="speaker-room-title">
-                  <span>Speaker Room</span>
-                  <strong>Top Monitoring View</strong>
-                </div>
-                <div class="group-pills">
+                <div class="control-row-top">
+                  <div class="speaker-room-title">
+                    <span>Speaker Room</span>
+                    <strong>Top Monitoring View</strong>
+                  </div>
                   <div class="mode-toggle">
                     <button
                       type="button"
@@ -363,7 +352,8 @@ function App() {
                       onClick={() => setSpeakerMode('mute')}
                     >Mute</button>
                   </div>
-                  <div class="pills-divider" />
+                </div>
+                <div class="group-pills">
                   <For each={[
                     { id: 'front' as const, label: 'Front' },
                     { id: 'side' as const, label: 'Side' },
