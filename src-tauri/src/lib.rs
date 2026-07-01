@@ -56,6 +56,7 @@ fn player_stop(player: State<'_, AtmosPlayer>) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AtmosPlayer::new())
         .setup(|app| {
             app.state::<AtmosPlayer>().init(app.handle().clone());

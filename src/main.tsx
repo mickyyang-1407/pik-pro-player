@@ -3,6 +3,7 @@ import { render } from 'solid-js/web';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { open } from '@tauri-apps/plugin-dialog';
 import './styles.css';
 
 const BASE_W = 1500;
@@ -499,6 +500,20 @@ function App() {
     }
   };
 
+  const onLoadAudioClick = async () => {
+    if (!isTauriRuntime()) {
+      audioInputEl?.click();
+      return;
+    }
+    const path = await open({
+      multiple: false,
+      filters: [{ name: 'Audio', extensions: ['wav', 'aif', 'aiff', 'mp3', 'm4a', 'mp4'] }]
+    });
+    if (path && typeof path === 'string') {
+      void loadAudioPath(path);
+    }
+  };
+
   const onAudioFileChange = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0] as TauriFile | undefined;
@@ -546,7 +561,13 @@ function App() {
   const deleteNote = (id: number) => {
     setNotes((current) => current.filter((note) => note.id !== id));
     setEditingNoteId((current) => (current === id ? null : current));
-    setSelectedNoteId((current) => (current === id ? null : current));
+    setSelectedNoteId((current) => {
+      if (current === id) {
+        setLockedRange({ start: playheadTime(), end: playheadTime() });
+        return null;
+      }
+      return current;
+    });
   };
 
   const selectNote = (note: Note) => {
@@ -649,6 +670,15 @@ function App() {
         nudgePlayhead(event.key === 'ArrowLeft' ? -step : step);
         return;
       }
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        if (isTypingTarget(event.target)) return;
+        const id = selectedNoteId();
+        if (id !== null) {
+          event.preventDefault();
+          deleteNote(id);
+        }
+        return;
+      }
       if (event.key === 'Enter') {
         if (isControlTarget(event.target)) return;
         const range = lockedRange();
@@ -748,7 +778,9 @@ function App() {
         <div class="topbar-title">
           <p class="eyebrow">Pik Pro Player</p>
           <div class="title-row">
-            <h1>{trackTitle()}</h1>
+            <div class="topbar-title-wrap">
+              <h1>{trackTitle()}</h1>
+            </div>
             <div class="transport-bar">
               <input
                 ref={audioInputEl}
@@ -757,7 +789,7 @@ function App() {
                 accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a,.mp4"
                 onChange={onAudioFileChange}
               />
-              <button type="button" class="transport-btn is-load" onClick={() => audioInputEl?.click()} aria-label="Load audio file">
+              <button type="button" class="transport-btn is-load" onClick={onLoadAudioClick} aria-label="Load audio file">
                 Load
               </button>
               <button type="button" class="transport-btn is-stop" onClick={stopPlayback} aria-label="Stop">■</button>
@@ -1060,7 +1092,7 @@ function App() {
                     <button
                       type="button"
                       class="note-range-delete"
-                      onClick={(event) => {
+                      onPointerDown={(event) => {
                         event.stopPropagation();
                         deleteNote(note.id);
                       }}
