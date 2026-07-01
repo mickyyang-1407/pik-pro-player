@@ -146,6 +146,7 @@ Define Phase 1 from scratch for Pik Pro Player:
 - Added auto-numbering Markdown list support for textareas.
 - Standardized `Enter` to submit/unfocus and `Shift+Enter` for newlines in all textareas.
 - Adjusted UI proportions for timeline hotkeys, locked timecode card, and General Note textarea.
+- Re-architected the global UI Zoom mechanism to use native CSS `zoom` coupled with inverse `calc()` dimensions, preventing catastrophic layout failures at 50% and 75% zoom.
 
 ### Verification
 

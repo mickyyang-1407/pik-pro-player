@@ -274,6 +274,7 @@ function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
   const [zoom, setZoom] = createSignal(100);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
+  const [showAnalytics, setShowAnalytics] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [notes, setNotes] = createSignal(seedNotes);
   const sortedNotes = createMemo(() => [...notes()].sort((a, b) => {
@@ -1138,24 +1139,17 @@ function App() {
                 <span>Locked Range</span>
                 <strong>{selectedRangeLabel()}</strong>
               </div>
-              <div class="timeline-options" style={{ "margin-left": "auto", "margin-right": "16px", "display": "flex", "align-items": "center", "gap": "6px" }}>
-                <input
-                  type="checkbox"
-                  id="link-timeline-edit"
-                  checked={linkTimelineEdit()}
-                  onChange={(e) => setLinkTimelineEdit(e.currentTarget.checked)}
-                />
-                <label for="link-timeline-edit" style={{ "font-size": "11px", "color": "var(--muted)", "cursor": "pointer" }}>
-                  Link Edit to Playhead
-                </label>
-              </div>
+              <button
+                type="button"
+                class="timeline-toggle-btn"
+                classList={{ 'is-active': linkTimelineEdit() }}
+                onClick={() => setLinkTimelineEdit(!linkTimelineEdit())}
+              >
+                <span class="toggle-indicator"></span>
+                Link Edit to Playhead
+              </button>
               <div class="timeline-hotkeys">
-                <span><kbd>Space</kbd> Play/Pause</span>
-                <span><kbd>←/→</kbd> Scrub</span>
-                <span><kbd>N</kbd> Note at playhead</span>
-                <span><kbd>Shift</kbd>+Click = expand last N</span>
-                <span><kbd>Enter</kbd> Range note</span>
-                <span>Drag = select range</span>
+                Space: Play/Pause &middot; ←/→: Scrub &middot; N: Point Note &middot; Shift+Click: Expand &middot; Drag: Select Range &middot; Enter: Range Note
               </div>
             </div>
             <div
@@ -1244,133 +1238,140 @@ function App() {
                 </div>
                 <div class="notes-heading-meta">
                   <small>{filteredSortedNotes().length} / {notes().length} notes</small>
+                  <button type="button" class="export-link" onClick={() => setShowAnalytics((v) => !v)}>
+                    {showAnalytics() ? 'Hide Analytics' : 'Show Analytics'}
+                  </button>
                   <button type="button" class="export-link" onClick={exportNotesCsv}>Export CSV</button>
                 </div>
               </div>
 
-              <div class="version-compare-card">
-                <div class="version-compare-head">
-                  <div>
-                    <span>Version Compare</span>
-                    <strong>{activeVersion().title}</strong>
-                  </div>
-                  <div class="version-switcher" aria-label="Mix version switcher">
-                    <For each={mixVersions}>
-                      {(version) => (
-                        <button
-                          type="button"
-                          classList={{ 'is-active': activeVersionId() === version.id }}
-                          onClick={() => setActiveVersionId(version.id)}
-                          aria-pressed={activeVersionId() === version.id}
-                        >
-                          {version.label}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-                <p>{activeVersion().note}</p>
-                <div class="version-metrics">
-                  <div>
-                    <span>LUFS</span>
-                    <strong>{activeVersion().integratedLufs}</strong>
-                    <small classList={{ 'is-better': versionDelta().lufs < 0, 'is-worse': versionDelta().lufs > 0 }}>
-                      {versionDelta().lufs >= 0 ? '+' : ''}{versionDelta().lufs.toFixed(1)} vs {compareVersion().label}
-                    </small>
-                  </div>
-                  <div>
-                    <span>True Peak</span>
-                    <strong>{activeVersion().truePeak}</strong>
-                    <small classList={{ 'is-better': versionDelta().truePeak < 0, 'is-worse': versionDelta().truePeak > 0 }}>
-                      {versionDelta().truePeak >= 0 ? '+' : ''}{versionDelta().truePeak.toFixed(1)} dB
-                    </small>
-                  </div>
-                  <div>
-                    <span>Open Issues</span>
-                    <strong>{activeVersion().openIssues}</strong>
-                    <small classList={{ 'is-better': versionDelta().issues < 0, 'is-worse': versionDelta().issues > 0 }}>
-                      {versionDelta().issues >= 0 ? '+' : ''}{versionDelta().issues}
-                    </small>
-                  </div>
-                </div>
-                <div class="version-foot">
-                  <span>Updated {activeVersion().updatedAt}</span>
-                  <span>Compare against {compareVersion().label}</span>
-                </div>
-              </div>
-
-              <div class="reference-card">
-                <div class="reference-head">
-                  <div>
-                    <span>Reference Track</span>
-                    <strong>{referenceTrack().name}</strong>
-                  </div>
-                  <div class="reference-actions">
-                    <input
-                      ref={referenceInputEl}
-                      class="reference-file-input"
-                      type="file"
-                      accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a"
-                      onChange={onReferenceFileChange}
-                    />
-                    <button type="button" onClick={() => referenceInputEl?.click()}>Load</button>
-                    <button type="button" onClick={() => setReferenceTrack(defaultReferenceTrack)}>Reset</button>
-                  </div>
-                </div>
-                <div class="reference-meta">
-                  <span>{referenceTrack().source === 'file' ? 'File selected' : 'Mock reference'}</span>
-                  <span>{referenceTrack().integratedLufs} LUFS</span>
-                  <span>{referenceTrack().truePeak} dBTP</span>
-                </div>
-                <svg class="reference-graph" viewBox="0 0 220 68" preserveAspectRatio="none" aria-label="Loudness over time graph">
-                  <line x1="0" y1="20" x2="220" y2="20" />
-                  <line x1="0" y1="44" x2="220" y2="44" />
-                  <polyline class="is-reference" points={referenceCurvePoints()} />
-                  <polyline class="is-current" points={currentCurvePoints()} />
-                  <line
-                    class="is-playhead"
-                    x1={(playheadTime() / playbackDuration()) * 220}
-                    x2={(playheadTime() / playbackDuration()) * 220}
-                    y1="4"
-                    y2="64"
-                  />
-                </svg>
-                <div class="reference-legend">
-                  <span><i class="is-current" />Active mix</span>
-                  <span><i class="is-reference" />Reference</span>
-                </div>
-              </div>
-
-              <div class="phase-card">
-                <div class="phase-head">
-                  <div>
-                    <span>Phase / Spectrum</span>
-                    <strong>Mix Integrity</strong>
-                  </div>
-                  <strong class="phase-score">{correlationValue().toFixed(2)}</strong>
-                </div>
-                <div class="phase-meter">
-                  <span>-1</span>
-                  <div>
-                    <i style={{ left: `${((correlationValue() + 1) / 2) * 100}%` }} />
-                  </div>
-                  <span>+1</span>
-                </div>
-                <div class="phase-meta">
-                  <span>Correlation</span>
-                  <strong>{phaseOffset()}° phase offset</strong>
-                </div>
-                <div class="spectrum-bars" aria-label="Spectrum analyzer preview">
-                  <For each={spectrumBands}>
-                    {(band) => (
+              {showAnalytics() && (
+                <>
+                  <div class="version-compare-card">
+                    <div class="version-compare-head">
                       <div>
-                        <i style={{ height: `${activeVersionId() === 'b' ? Math.max(18, band.value - 6) : band.value}%` }} />
-                        <span>{band.label}</span>
+                        <span>Version Compare</span>
+                        <strong>{activeVersion().title}</strong>
                       </div>
-                    )}
-                  </For>
-                </div>
-              </div>
+                      <div class="version-switcher" aria-label="Mix version switcher">
+                        <For each={mixVersions}>
+                          {(version) => (
+                            <button
+                              type="button"
+                              classList={{ 'is-active': activeVersionId() === version.id }}
+                              onClick={() => setActiveVersionId(version.id)}
+                              aria-pressed={activeVersionId() === version.id}
+                            >
+                              {version.label}
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                    <p>{activeVersion().note}</p>
+                    <div class="version-metrics">
+                      <div>
+                        <span>LUFS</span>
+                        <strong>{activeVersion().integratedLufs}</strong>
+                        <small classList={{ 'is-better': versionDelta().lufs < 0, 'is-worse': versionDelta().lufs > 0 }}>
+                          {versionDelta().lufs >= 0 ? '+' : ''}{versionDelta().lufs.toFixed(1)} vs {compareVersion().label}
+                        </small>
+                      </div>
+                      <div>
+                        <span>True Peak</span>
+                        <strong>{activeVersion().truePeak}</strong>
+                        <small classList={{ 'is-better': versionDelta().truePeak < 0, 'is-worse': versionDelta().truePeak > 0 }}>
+                          {versionDelta().truePeak >= 0 ? '+' : ''}{versionDelta().truePeak.toFixed(1)} dB
+                        </small>
+                      </div>
+                      <div>
+                        <span>Open Issues</span>
+                        <strong>{activeVersion().openIssues}</strong>
+                        <small classList={{ 'is-better': versionDelta().issues < 0, 'is-worse': versionDelta().issues > 0 }}>
+                          {versionDelta().issues >= 0 ? '+' : ''}{versionDelta().issues}
+                        </small>
+                      </div>
+                    </div>
+                    <div class="version-foot">
+                      <span>Updated {activeVersion().updatedAt}</span>
+                      <span>Compare against {compareVersion().label}</span>
+                    </div>
+                  </div>
+
+                  <div class="reference-card">
+                    <div class="reference-head">
+                      <div>
+                        <span>Reference Track</span>
+                        <strong>{referenceTrack().name}</strong>
+                      </div>
+                      <div class="reference-actions">
+                        <input
+                          ref={referenceInputEl}
+                          class="reference-file-input"
+                          type="file"
+                          accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a"
+                          onChange={onReferenceFileChange}
+                        />
+                        <button type="button" onClick={() => referenceInputEl?.click()}>Load</button>
+                        <button type="button" onClick={() => setReferenceTrack(defaultReferenceTrack)}>Reset</button>
+                      </div>
+                    </div>
+                    <div class="reference-meta">
+                      <span>{referenceTrack().source === 'file' ? 'File selected' : 'Mock reference'}</span>
+                      <span>{referenceTrack().integratedLufs} LUFS</span>
+                      <span>{referenceTrack().truePeak} dBTP</span>
+                    </div>
+                    <svg class="reference-graph" viewBox="0 0 220 68" preserveAspectRatio="none" aria-label="Loudness over time graph">
+                      <line x1="0" y1="20" x2="220" y2="20" />
+                      <line x1="0" y1="44" x2="220" y2="44" />
+                      <polyline class="is-reference" points={referenceCurvePoints()} />
+                      <polyline class="is-current" points={currentCurvePoints()} />
+                      <line
+                        class="is-playhead"
+                        x1={(playheadTime() / playbackDuration()) * 220}
+                        x2={(playheadTime() / playbackDuration()) * 220}
+                        y1="4"
+                        y2="64"
+                      />
+                    </svg>
+                    <div class="reference-legend">
+                      <span><i class="is-current" />Active mix</span>
+                      <span><i class="is-reference" />Reference</span>
+                    </div>
+                  </div>
+
+                  <div class="phase-card">
+                    <div class="phase-head">
+                      <div>
+                        <span>Phase / Spectrum</span>
+                        <strong>Mix Integrity</strong>
+                      </div>
+                      <strong class="phase-score">{correlationValue().toFixed(2)}</strong>
+                    </div>
+                    <div class="phase-meter">
+                      <span>-1</span>
+                      <div>
+                        <i style={{ left: `${((correlationValue() + 1) / 2) * 100}%` }} />
+                      </div>
+                      <span>+1</span>
+                    </div>
+                    <div class="phase-meta">
+                      <span>Correlation</span>
+                      <strong>{phaseOffset()}° phase offset</strong>
+                    </div>
+                    <div class="spectrum-bars" aria-label="Spectrum analyzer preview">
+                      <For each={spectrumBands}>
+                        {(band) => (
+                          <div>
+                            <i style={{ height: `${activeVersionId() === 'b' ? Math.max(18, band.value - 6) : band.value}%` }} />
+                            <span>{band.label}</span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div class="general-note-card">
                 <span>General Note</span>
