@@ -19,9 +19,12 @@ type Note = {
   body: string;
   status: 'open' | 'checking' | 'done';
   kind: 'point' | 'range';
+  severity: 'critical' | 'minor';
 };
 
 const durationSeconds = 214;
+const PLAYHEAD_NUDGE_SECONDS = 1;
+const PLAYHEAD_SCRUB_SECONDS = 5;
 const zoomOptions = [50, 75, 100, 125, 150];
 
 const currentIntegratedLufs = -14.2;
@@ -94,6 +97,7 @@ const seedNotes: Note[] = [
     body: 'Verse low-mid feels crowded. Try a tighter pocket around 180 Hz.',
     status: 'open',
     kind: 'range',
+    severity: 'critical',
   },
   {
     id: 2,
@@ -102,6 +106,7 @@ const seedNotes: Note[] = [
     body: 'Chorus lift works. Check vocal edge after the downbeat.',
     status: 'checking',
     kind: 'range',
+    severity: 'minor',
   },
 ];
 
@@ -120,6 +125,34 @@ const isTypingTarget = (target: EventTarget | null) => {
   return target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable;
 };
 
+const isControlTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === 'BUTTON' || target.tagName === 'SELECT' || isTypingTarget(target);
+};
+
+function csvEscape(value: string) {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function safeFileName(name: string) {
+  return name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'session';
+}
+
+function downloadTextFile(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
   const [zoom, setZoom] = createSignal(100);
@@ -130,6 +163,21 @@ function App() {
   const [generalNote, setGeneralNote] = createSignal('');
   const [editingNoteId, setEditingNoteId] = createSignal<number | null>(null);
   const [selectedNoteId, setSelectedNoteId] = createSignal<number | null>(null);
+  const [noteSearch, setNoteSearch] = createSignal('');
+  const [statusFilter, setStatusFilter] = createSignal<'all' | 'open' | 'checking' | 'done'>('all');
+  const [severityFilter, setSeverityFilter] = createSignal<'all' | 'critical' | 'minor'>('all');
+  const filteredSortedNotes = createMemo(() => {
+    const query = noteSearch().trim().toLowerCase();
+    const status = statusFilter();
+    const severity = severityFilter();
+    return sortedNotes().filter((note) => {
+      if (note.id === editingNoteId() || note.id === selectedNoteId()) return true;
+      if (status !== 'all' && note.status !== status) return false;
+      if (severity !== 'all' && note.severity !== severity) return false;
+      if (query && !note.body.toLowerCase().includes(query)) return false;
+      return true;
+    });
+  });
   const [trackTitle] = createSignal('No File Loaded');
   const [isPlaying, setIsPlaying] = createSignal(false);
   const [playheadTime, setPlayheadTime] = createSignal(0);
@@ -252,6 +300,9 @@ function App() {
     setPlayheadTime(0);
   };
   const toggleLoop = () => setLoopEnabled((enabled) => !enabled);
+  const nudgePlayhead = (deltaSeconds: number) => {
+    setPlayheadTime((time) => Math.max(0, Math.min(durationSeconds, time + deltaSeconds)));
+  };
 
   const startEditingNote = (note: Note) => {
     setNotes((current) => [note, ...current]);
@@ -261,17 +312,26 @@ function App() {
 
   const addPointNoteAtPlayhead = () => {
     const time = playheadTime();
-    startEditingNote({ id: nextNoteId(), rangeStart: time, rangeEnd: time, body: '', status: 'open', kind: 'point' });
+    startEditingNote({ id: nextNoteId(), rangeStart: time, rangeEnd: time, body: '', status: 'open', kind: 'point', severity: 'minor' });
   };
 
   const addRangeNoteDraft = () => {
     const range = displayRange();
     if (range.end <= range.start) return;
-    startEditingNote({ id: nextNoteId(), rangeStart: range.start, rangeEnd: range.end, body: '', status: 'open', kind: 'range' });
+    startEditingNote({ id: nextNoteId(), rangeStart: range.start, rangeEnd: range.end, body: '', status: 'open', kind: 'range', severity: 'minor' });
   };
 
   const updateNoteBody = (id: number, body: string) => {
     setNotes((current) => current.map((note) => (note.id === id ? { ...note, body } : note)));
+  };
+
+  const toggleSeverity = (id: number) => {
+    setNotes((current) => current.map((note) => (note.id === id ? { ...note, severity: note.severity === 'critical' ? 'minor' : 'critical' } : note)));
+  };
+
+  const nextStatus: Record<Note['status'], Note['status']> = { open: 'checking', checking: 'done', done: 'open' };
+  const cycleStatus = (id: number) => {
+    setNotes((current) => current.map((note) => (note.id === id ? { ...note, status: nextStatus[note.status] } : note)));
   };
 
   const deleteNote = (id: number) => {
@@ -283,6 +343,39 @@ function App() {
   const selectNote = (note: Note) => {
     setSelectedNoteId(note.id);
     setLockedRange({ start: note.rangeStart, end: note.rangeEnd });
+  };
+
+  const exportNotesCsv = () => {
+    const rows: string[][] = [['Time', 'Kind', 'Severity', 'Status', 'Note']];
+    const general = generalNote().trim();
+    if (general) {
+      rows.push(['General', 'general', '-', '-', general]);
+    }
+    filteredSortedNotes().forEach((note) => {
+      const time = note.kind === 'point' ? formatTime(note.rangeStart) : `${formatTime(note.rangeStart)} - ${formatTime(note.rangeEnd)}`;
+      rows.push([time, note.kind, note.severity, note.status, note.body]);
+    });
+    const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+    downloadTextFile(`${safeFileName(trackTitle())}-notes.csv`, csv, 'text/csv;charset=utf-8');
+  };
+
+  const exportComplianceReport = () => {
+    const platform = targetPlatform();
+    const lufsDiff = Math.abs(currentIntegratedLufs - platform.target);
+    const peakHeadroom = platform.truePeak - currentTruePeak;
+    const lines = [
+      'Pik Pro Player - Loudness Compliance Report',
+      `Generated: ${new Date().toLocaleString()}`,
+      `Track: ${trackTitle()}`,
+      '',
+      `Target Platform: ${platform.label}${platform.note ? ` (${platform.note})` : ''}`,
+      `Target Loudness: ${platform.target} LKFS (tolerance +/-${platform.tolerance ?? 1} LU)`,
+      `Max True Peak: ${platform.truePeak} dBTP`,
+      '',
+      `Measured Integrated LUFS: ${currentIntegratedLufs} LUFS -> ${statusLabel[lufsStatus()].toUpperCase()} (diff ${lufsDiff.toFixed(1)} LU vs target)`,
+      `Measured True Peak: ${currentTruePeak} dBTP -> ${statusLabel[truePeakStatus()].toUpperCase()} (headroom ${peakHeadroom.toFixed(1)} dB vs limit)`,
+    ];
+    downloadTextFile(`${safeFileName(trackTitle())}-loudness-report.txt`, lines.join('\n'), 'text/plain;charset=utf-8');
   };
 
   createEffect(() => {
@@ -299,7 +392,21 @@ function App() {
         addPointNoteAtPlayhead();
         return;
       }
+      if (event.key === ' ' || event.code === 'Space') {
+        if (isControlTarget(event.target)) return;
+        event.preventDefault();
+        togglePlay();
+        return;
+      }
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (isControlTarget(event.target)) return;
+        event.preventDefault();
+        const step = event.shiftKey ? PLAYHEAD_SCRUB_SECONDS : PLAYHEAD_NUDGE_SECONDS;
+        nudgePlayhead(event.key === 'ArrowLeft' ? -step : step);
+        return;
+      }
       if (event.key === 'Enter') {
+        if (isControlTarget(event.target)) return;
         const range = lockedRange();
         if (selectedNoteId() === null && range.end > range.start) {
           event.preventDefault();
@@ -327,6 +434,7 @@ function App() {
       return;
     }
     setSelectedNoteId(null);
+    setPlayheadTime(time);
     setDragStart(time);
     setDragNow(time);
     setLockedRange({ start: time, end: time });
@@ -493,8 +601,11 @@ function App() {
                     <For each={targetPlatforms}>{(platform) => <option value={platform.id}>{platform.label}</option>}</For>
                   </select>
                 </div>
-                <div class="target-spec-note">
-                  Max True Peak {targetPlatform().truePeak} dBTP{targetPlatform().note ? ` · ${targetPlatform().note}` : ''}
+                <div class="target-spec-row">
+                  <div class="target-spec-note">
+                    Max True Peak {targetPlatform().truePeak} dBTP{targetPlatform().note ? ` · ${targetPlatform().note}` : ''}
+                  </div>
+                  <button type="button" class="export-link" onClick={exportComplianceReport}>Export Report</button>
                 </div>
                 <div class="loudness-scale">
                   <div class="loudness-track" />
@@ -653,6 +764,8 @@ function App() {
                 <strong>{selectedRangeLabel()}</strong>
               </div>
               <div class="timeline-hotkeys">
+                <span><kbd>Space</kbd> Play/Pause</span>
+                <span><kbd>←/→</kbd> Scrub</span>
                 <span><kbd>N</kbd> Note at playhead</span>
                 <span><kbd>Enter</kbd> Range note</span>
                 <span>Drag = select range</span>
@@ -666,11 +779,15 @@ function App() {
               onPointerUp={onTimelineUp}
               onPointerCancel={onTimelineUp}
             >
-              <For each={sortedNotes()}>
+              <For each={filteredSortedNotes()}>
                 {(note) => (
                   <div
                     class="note-range"
-                    classList={{ 'is-point': note.kind === 'point', 'is-selected': selectedNoteId() === note.id }}
+                    classList={{
+                      'is-point': note.kind === 'point',
+                      'is-selected': selectedNoteId() === note.id,
+                      'is-critical': note.severity === 'critical',
+                    }}
                     style={{
                       left: `${(note.rangeStart / durationSeconds) * 100}%`,
                       width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / durationSeconds) * 100)}%`,
@@ -738,7 +855,10 @@ function App() {
                   <span>Notes Panel</span>
                   <strong>Time Range Notes</strong>
                 </div>
-                <small>{notes().length} notes</small>
+                <div class="notes-heading-meta">
+                  <small>{filteredSortedNotes().length} / {notes().length} notes</small>
+                  <button type="button" class="export-link" onClick={exportNotesCsv}>Export CSV</button>
+                </div>
               </div>
 
               <div class="general-note-card">
@@ -765,12 +885,43 @@ function App() {
               </button>
               <p class="note-hint">Press <kbd>N</kbd> anytime to drop a note at the playhead.</p>
 
+              <div class="note-filter-bar">
+                <input
+                  type="text"
+                  class="note-search-input"
+                  value={noteSearch()}
+                  onInput={(event) => setNoteSearch(event.currentTarget.value)}
+                  placeholder="Search notes..."
+                />
+                <select
+                  value={statusFilter()}
+                  onChange={(event) => setStatusFilter(event.currentTarget.value as 'all' | 'open' | 'checking' | 'done')}
+                >
+                  <option value="all">All Status</option>
+                  <option value="open">Open</option>
+                  <option value="checking">Checking</option>
+                  <option value="done">Done</option>
+                </select>
+                <select
+                  value={severityFilter()}
+                  onChange={(event) => setSeverityFilter(event.currentTarget.value as 'all' | 'critical' | 'minor')}
+                >
+                  <option value="all">All Severity</option>
+                  <option value="critical">Critical</option>
+                  <option value="minor">Minor</option>
+                </select>
+              </div>
+
               <div class="note-list">
-                <For each={sortedNotes()}>
+                <For each={filteredSortedNotes()}>
                   {(note) => (
                     <article
                       class="note-item"
-                      classList={{ 'is-point': note.kind === 'point', 'is-selected': selectedNoteId() === note.id }}
+                      classList={{
+                        'is-point': note.kind === 'point',
+                        'is-selected': selectedNoteId() === note.id,
+                        'is-critical': note.severity === 'critical',
+                      }}
                       data-note-id={note.id}
                     >
                       <div>
@@ -778,7 +929,23 @@ function App() {
                           {note.kind === 'point' ? formatTime(note.rangeStart) : `${formatTime(note.rangeStart)} - ${formatTime(note.rangeEnd)}`}
                         </strong>
                         <div class="note-item-actions">
-                          <span>{note.status}</span>
+                          <button
+                            type="button"
+                            class="severity-pill"
+                            classList={{ 'is-critical': note.severity === 'critical' }}
+                            onClick={() => toggleSeverity(note.id)}
+                          >
+                            {note.severity === 'critical' ? 'Critical' : 'Minor'}
+                          </button>
+                          <button
+                            type="button"
+                            class="status-pill-toggle"
+                            classList={{ 'is-checking': note.status === 'checking', 'is-done': note.status === 'done' }}
+                            onClick={() => cycleStatus(note.id)}
+                            aria-label="Cycle note status"
+                          >
+                            {note.status}
+                          </button>
                           <button
                             type="button"
                             class="note-delete"
