@@ -256,7 +256,10 @@ function App() {
                 {(group) => (
                   <button
                     type="button"
-                    classList={{ 'is-solo': soloGroups().has(group.id) }}
+                    classList={{
+                      'is-solo': soloGroups().has(group.id) && speakerMode() === 'solo',
+                      'is-mute': soloGroups().has(group.id) && speakerMode() === 'mute',
+                    }}
                     onClick={(e) => {
                       setSoloGroups((prev) => {
                         const next = new Set(prev);
@@ -319,7 +322,7 @@ function App() {
             <section class="speaker-view" aria-label="Top-down speaker view">
               <div class="speaker-view-title">
                 <span>Speaker View</span>
-                <strong>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ' Solo' : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') : 'All'}</strong>
+                <strong classList={{ 'is-mute-label': soloGroups().size > 0 && speakerMode() === 'mute' }}>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') : 'All'}</strong>
               </div>
               <div class="room-plane" ref={roomPlaneEl}>
                 <div class="screen-line">SCREEN</div>
