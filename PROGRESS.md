@@ -133,3 +133,26 @@ Define Phase 1 from scratch for Pik Pro Player:
 ### Pause
 
 - Micky asked to pause immediately before final acceptance of this layout. See `HANDOFF.md`.
+
+## 2026-07-01 Timeline and Note UX Enhancements
+
+### Completed
+
+- Fixed Timeline Note Overlap rendering (Range notes behind Point notes).
+- Implemented `Shift+Click` on the timeline to intuitively expand the `lockedRange` and convert Point notes to Range notes interactively.
+- Added a `Link Edit to Playhead` toggle (default OFF) to decouple the timeline range selection from actual audio playback, preventing music loops from interrupting editing.
+- Fixed `av:ended` playback logic so that unlooped tracks rewind to the start on completion, allowing seamless replaying.
+- Added auto-focus for new Point notes (pressing `N` focuses the editor instantly).
+- Added auto-numbering Markdown list support for textareas.
+- Standardized `Enter` to submit/unfocus and `Shift+Enter` for newlines in all textareas.
+- Adjusted UI proportions for timeline hotkeys, locked timecode card, and General Note textarea.
+
+### Verification
+
+- `npm run tauri dev`: UI verified visually and manually tested.
+- `git commit` saved.
+
+### Next Steps
+
+- **Undo / Redo System** (10 steps) for Note and Timeline operations.
+- **Real Metering & Loudness data** hooking up to the Tauri backend AVFoundation player.
