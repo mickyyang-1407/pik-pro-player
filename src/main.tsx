@@ -28,7 +28,7 @@ type Note = {
 const MOCK_DURATION_SECONDS = 214;
 const PLAYHEAD_NUDGE_SECONDS = 1;
 const PLAYHEAD_SCRUB_SECONDS = 5;
-const zoomOptions = [50, 75, 100, 125, 150];
+const zoomOptions = [75, 100, 125, 150];
 
 type TargetStatus = 'pass' | 'warn' | 'fail';
 
