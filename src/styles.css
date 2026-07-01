@@ -111,6 +111,11 @@ button {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.transport-file-input {
+  display: none;
 }
 
 .transport-btn {
@@ -125,6 +130,16 @@ button {
   font-size: 10px;
   line-height: 1;
   transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.transport-btn.is-load {
+  width: auto;
+  min-width: 44px;
+  padding: 0 10px;
+  color: var(--cyan-strong);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .transport-btn.is-stop:hover {
@@ -163,6 +178,17 @@ button {
   font-size: 12px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+
+.transport-status {
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topbar-meta {
@@ -1345,14 +1371,388 @@ button {
 .notes-content {
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);
-  gap: 12px;
-  padding: 22px;
+  grid-template-rows: auto auto auto auto auto auto auto auto auto minmax(0, 1fr);
+  gap: 7px;
+  padding: 14px;
   overflow: hidden;
 }
 
-.general-note-card {
+.version-compare-card {
   padding: 10px 12px;
+  border: 1px solid rgba(0, 167, 200, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(36, 52, 66, 0.08);
+}
+
+.version-compare-head,
+.version-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.version-compare-head span,
+.version-compare-head strong {
+  display: block;
+}
+
+.version-compare-head span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.version-compare-head strong {
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.version-switcher {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  flex-shrink: 0;
+}
+
+.version-switcher button {
+  width: 30px;
+  height: 24px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.version-switcher button.is-active {
+  background: var(--cyan);
+  color: #ffffff;
+  box-shadow: var(--tight-shadow);
+}
+
+.version-compare-card p {
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.version-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.version-metrics div {
+  min-width: 0;
+  padding: 7px;
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.version-metrics span,
+.version-metrics strong,
+.version-metrics small {
+  display: block;
+}
+
+.version-metrics span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.version-metrics strong {
+  margin-top: 3px;
+  color: var(--cyan-strong);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-metrics small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.version-metrics small.is-better {
+  color: #1f8a4c;
+}
+
+.version-metrics small.is-worse {
+  color: #c0392b;
+}
+
+.version-foot {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.reference-card {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(20, 32, 42, 0.1);
+  background: linear-gradient(180deg, #ffffff, #f7fbfc);
+}
+
+.reference-head,
+.reference-meta,
+.reference-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reference-head span,
+.reference-head strong {
+  display: block;
+}
+
+.reference-head span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reference-head strong {
+  max-width: 150px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.reference-file-input {
+  display: none;
+}
+
+.reference-actions button {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--cyan-strong);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.reference-actions button:hover {
+  background: var(--cyan-soft);
+}
+
+.reference-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.reference-graph {
+  width: 100%;
+  height: 54px;
+  margin-top: 6px;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(0, 167, 200, 0.08), rgba(0, 167, 200, 0.02)),
+    repeating-linear-gradient(90deg, transparent 0 36px, rgba(0, 167, 200, 0.12) 37px 38px);
+  overflow: visible;
+}
+
+.reference-graph line {
+  stroke: rgba(20, 32, 42, 0.12);
+  stroke-width: 1;
+}
+
+.reference-graph polyline {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.reference-graph .is-current {
+  stroke: var(--cyan);
+}
+
+.reference-graph .is-reference {
+  stroke: #8e63d7;
+}
+
+.reference-graph .is-playhead {
+  stroke: #f28c28;
+  stroke-width: 1.4;
+}
+
+.reference-legend {
+  justify-content: flex-start;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.reference-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.reference-legend i {
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.reference-legend i.is-current {
+  background: var(--cyan);
+}
+
+.reference-legend i.is-reference {
+  background: #8e63d7;
+}
+
+.phase-card {
+  padding: 8px 10px;
+  border: 1px solid rgba(142, 99, 215, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(142, 99, 215, 0.08), rgba(255, 255, 255, 0.94));
+}
+
+.phase-head,
+.phase-meta,
+.phase-meter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.phase-head span,
+.phase-head strong {
+  display: block;
+}
+
+.phase-head span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.phase-head strong {
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.phase-score {
+  color: #1f8a4c !important;
+  font-size: 18px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.phase-meter {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.phase-meter div {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e74c3c, #f2b705 44%, var(--cyan) 62%, #1f8a4c);
+}
+
+.phase-meter i {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 3px 8px rgba(20, 32, 42, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.phase-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.phase-meta strong {
+  color: var(--cyan-strong);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spectrum-bars {
+  height: 46px;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  align-items: end;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.spectrum-bars div {
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 2px;
+  align-items: end;
+}
+
+.spectrum-bars i {
+  display: block;
+  width: 100%;
+  min-height: 3px;
+  border-radius: 4px 4px 1px 1px;
+  background: linear-gradient(180deg, #8e63d7, var(--cyan));
+}
+
+.spectrum-bars span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.general-note-card {
+  padding: 7px 10px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(0, 167, 200, 0.08), rgba(0, 167, 200, 0.02));
   border: 1px solid rgba(0, 167, 200, 0.18);
@@ -1368,7 +1768,7 @@ button {
 
 .general-note-card textarea {
   width: 100%;
-  height: 52px;
+  height: 40px;
   margin-top: 6px;
   padding: 8px;
   border: 1px solid var(--line);

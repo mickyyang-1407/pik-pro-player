@@ -1,5 +1,7 @@
 import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import './styles.css';
 
@@ -22,17 +24,53 @@ type Note = {
   severity: 'critical' | 'minor';
 };
 
-const durationSeconds = 214;
+const MOCK_DURATION_SECONDS = 214;
 const PLAYHEAD_NUDGE_SECONDS = 1;
 const PLAYHEAD_SCRUB_SECONDS = 5;
 const zoomOptions = [50, 75, 100, 125, 150];
 
-const currentIntegratedLufs = -14.2;
-const currentTruePeak = -1.1;
-
 type TargetStatus = 'pass' | 'warn' | 'fail';
 
 const statusLabel: Record<TargetStatus, string> = { pass: 'Pass', warn: 'Warn', fail: 'Fail' };
+
+type MixVersion = {
+  id: 'a' | 'b';
+  label: string;
+  title: string;
+  note: string;
+  integratedLufs: number;
+  truePeak: number;
+  openIssues: number;
+  updatedAt: string;
+};
+
+type ReferenceTrack = {
+  name: string;
+  source: 'mock' | 'file';
+  integratedLufs: number;
+  truePeak: number;
+};
+
+type LoudnessPoint = {
+  time: number;
+  value: number;
+};
+
+type SpectrumBand = {
+  label: string;
+  value: number;
+};
+
+type PositionPayload = {
+  position: number;
+  duration: number;
+};
+
+type TauriFile = File & {
+  path?: string;
+};
+
+const isTauriRuntime = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 const speakers: Speaker[] = [
   { label: 'L',   group: 'front', area: 'left' },
@@ -89,6 +127,70 @@ const targetPlatforms: TargetPlatform[] = [
   { id: 'atmos-netflix', label: 'Netflix Atmos (-27)', target: -27, truePeak: -2, tolerance: 2, note: 'dialogue-gated ±2 LU, BS.1770-1' },
 ];
 
+const mixVersions: MixVersion[] = [
+  {
+    id: 'a',
+    label: 'A',
+    title: 'Current Mix',
+    note: 'Wider chorus image, vocal edge still checking.',
+    integratedLufs: -14.2,
+    truePeak: -1.1,
+    openIssues: 2,
+    updatedAt: 'Today 18:10',
+  },
+  {
+    id: 'b',
+    label: 'B',
+    title: 'Revision 02',
+    note: 'Tighter low-mid and safer true peak headroom.',
+    integratedLufs: -15.4,
+    truePeak: -1.8,
+    openIssues: 1,
+    updatedAt: 'Today 19:35',
+  },
+];
+
+const defaultReferenceTrack: ReferenceTrack = {
+  name: 'Reference Track',
+  source: 'mock',
+  integratedLufs: -15.8,
+  truePeak: -1.4,
+};
+
+const currentLoudnessCurve: LoudnessPoint[] = [
+  { time: 0, value: -22 },
+  { time: 24, value: -18 },
+  { time: 52, value: -16.8 },
+  { time: 86, value: -14.4 },
+  { time: 121, value: -13.2 },
+  { time: 153, value: -15.1 },
+  { time: 181, value: -12.6 },
+  { time: 214, value: -16.4 },
+];
+
+const referenceLoudnessCurve: LoudnessPoint[] = [
+  { time: 0, value: -23 },
+  { time: 24, value: -19.2 },
+  { time: 52, value: -17.4 },
+  { time: 86, value: -15.9 },
+  { time: 121, value: -14.6 },
+  { time: 153, value: -15.7 },
+  { time: 181, value: -14.1 },
+  { time: 214, value: -16.9 },
+];
+
+const spectrumBands: SpectrumBand[] = [
+  { label: '40', value: 42 },
+  { label: '80', value: 58 },
+  { label: '160', value: 72 },
+  { label: '315', value: 64 },
+  { label: '630', value: 48 },
+  { label: '1.2k', value: 54 },
+  { label: '2.5k', value: 61 },
+  { label: '5k', value: 46 },
+  { label: '10k', value: 38 },
+];
+
 const seedNotes: Note[] = [
   {
     id: 1,
@@ -111,7 +213,7 @@ const seedNotes: Note[] = [
 ];
 
 function formatTime(seconds: number) {
-  const clamped = Math.max(0, Math.min(durationSeconds, seconds));
+  const clamped = Math.max(0, seconds);
   const minutes = Math.floor(clamped / 60);
   const wholeSeconds = Math.floor(clamped % 60);
   return `${minutes.toString().padStart(2, '0')}:${wholeSeconds.toString().padStart(2, '0')}`;
@@ -141,6 +243,10 @@ function safeFileName(name: string) {
   return name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'session';
 }
 
+function fileTitleFromPath(path: string) {
+  return path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'Loaded Audio';
+}
+
 function downloadTextFile(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -151,6 +257,16 @@ function downloadTextFile(filename: string, content: string, mime: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function loudnessPolyline(points: LoudnessPoint[], valueOffset = 0) {
+  return points
+    .map((point) => {
+      const x = (point.time / MOCK_DURATION_SECONDS) * 220;
+      const y = ((Math.max(-30, Math.min(-10, point.value + valueOffset)) + 30) / 20) * 58;
+      return `${x.toFixed(1)},${(64 - y).toFixed(1)}`;
+    })
+    .join(' ');
 }
 
 function App() {
@@ -166,6 +282,8 @@ function App() {
   const [noteSearch, setNoteSearch] = createSignal('');
   const [statusFilter, setStatusFilter] = createSignal<'all' | 'open' | 'checking' | 'done'>('all');
   const [severityFilter, setSeverityFilter] = createSignal<'all' | 'critical' | 'minor'>('all');
+  const [activeVersionId, setActiveVersionId] = createSignal<MixVersion['id']>('a');
+  const [referenceTrack, setReferenceTrack] = createSignal<ReferenceTrack>(defaultReferenceTrack);
   const filteredSortedNotes = createMemo(() => {
     const query = noteSearch().trim().toLowerCase();
     const status = statusFilter();
@@ -178,7 +296,25 @@ function App() {
       return true;
     });
   });
-  const [trackTitle] = createSignal('No File Loaded');
+  const [trackTitle, setTrackTitle] = createSignal('No File Loaded');
+  const [trackDuration, setTrackDuration] = createSignal(MOCK_DURATION_SECONDS);
+  const [hasLoadedAudio, setHasLoadedAudio] = createSignal(false);
+  const [loadStatus, setLoadStatus] = createSignal('Mock clock ready');
+  const playbackDuration = createMemo(() => Math.max(0.1, trackDuration()));
+  const activeVersion = createMemo(() => mixVersions.find((version) => version.id === activeVersionId()) ?? mixVersions[0]);
+  const compareVersion = createMemo(() => mixVersions.find((version) => version.id !== activeVersionId()) ?? mixVersions[1]);
+  const selectedIntegratedLufs = createMemo(() => activeVersion().integratedLufs);
+  const selectedTruePeak = createMemo(() => activeVersion().truePeak);
+  const currentCurveOffset = createMemo(() => selectedIntegratedLufs() - mixVersions[0].integratedLufs);
+  const currentCurvePoints = createMemo(() => loudnessPolyline(currentLoudnessCurve, currentCurveOffset()));
+  const referenceCurvePoints = createMemo(() => loudnessPolyline(referenceLoudnessCurve));
+  const correlationValue = createMemo(() => (activeVersionId() === 'b' ? 0.91 : 0.78));
+  const phaseOffset = createMemo(() => (activeVersionId() === 'b' ? -4 : -12));
+  const versionDelta = createMemo(() => ({
+    lufs: activeVersion().integratedLufs - compareVersion().integratedLufs,
+    truePeak: activeVersion().truePeak - compareVersion().truePeak,
+    issues: activeVersion().openIssues - compareVersion().openIssues,
+  }));
   const [isPlaying, setIsPlaying] = createSignal(false);
   const [playheadTime, setPlayheadTime] = createSignal(0);
   const [loopEnabled, setLoopEnabled] = createSignal(false);
@@ -226,13 +362,13 @@ function App() {
   const targetPlatform = createMemo(() => targetPlatforms.find((p) => p.id === targetPlatformId()) ?? targetPlatforms[0]);
   const lufsStatus = createMemo<TargetStatus>(() => {
     const tolerance = targetPlatform().tolerance ?? 1;
-    const diff = Math.abs(currentIntegratedLufs - targetPlatform().target);
+    const diff = Math.abs(selectedIntegratedLufs() - targetPlatform().target);
     if (diff <= tolerance) return 'pass';
     if (diff <= tolerance + 2) return 'warn';
     return 'fail';
   });
   const truePeakStatus = createMemo<TargetStatus>(() => {
-    const headroom = targetPlatform().truePeak - currentTruePeak;
+    const headroom = targetPlatform().truePeak - selectedTruePeak();
     if (headroom >= 0) return 'pass';
     if (headroom >= -0.5) return 'warn';
     return 'fail';
@@ -245,6 +381,8 @@ function App() {
 
   let timelineEl: HTMLDivElement | undefined;
   let roomPlaneEl: HTMLDivElement | undefined;
+  let audioInputEl: HTMLInputElement | undefined;
+  let referenceInputEl: HTMLInputElement | undefined;
   const [gridScale, setGridScale] = createSignal(1);
   const BASE_ROOM_W = 560;
 
@@ -266,10 +404,14 @@ function App() {
   const selectedRangeLabel = createMemo(
     () => `${formatTime(displayRange().start)} - ${formatTime(displayRange().end)}`
   );
+  const timelineTicks = createMemo(() => {
+    const duration = playbackDuration();
+    return [0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio) => Math.round(duration * ratio));
+  });
 
   let playTimer: ReturnType<typeof setInterval> | undefined;
   createEffect(() => {
-    if (isPlaying()) {
+    if (isPlaying() && !hasLoadedAudio()) {
       if (playTimer) return;
       playTimer = setInterval(() => {
         setPlayheadTime((t) => {
@@ -278,9 +420,9 @@ function App() {
           if (loopEnabled() && range.end > range.start) {
             return next >= range.end ? range.start : next;
           }
-          if (next >= durationSeconds) {
+          if (next >= playbackDuration()) {
             setIsPlaying(false);
-            return durationSeconds;
+            return playbackDuration();
           }
           return next;
         });
@@ -294,14 +436,81 @@ function App() {
     if (playTimer) clearInterval(playTimer);
   });
 
-  const togglePlay = () => setIsPlaying((playing) => !playing);
-  const stopPlayback = () => {
+  const seekTo = async (position: number) => {
+    const next = Math.max(0, Math.min(playbackDuration(), position));
+    setPlayheadTime(next);
+    if (hasLoadedAudio()) {
+      try {
+        await invoke('player_seek', { position: next });
+      } catch (error) {
+        setLoadStatus(`Seek failed: ${String(error)}`);
+      }
+    }
+  };
+
+  const togglePlay = async () => {
+    if (!hasLoadedAudio()) {
+      setIsPlaying((playing) => !playing);
+      return;
+    }
+    try {
+      if (isPlaying()) {
+        await invoke('player_pause');
+        setIsPlaying(false);
+      } else {
+        await invoke('player_play');
+        setIsPlaying(true);
+      }
+    } catch (error) {
+      setLoadStatus(`Playback failed: ${String(error)}`);
+    }
+  };
+
+  const stopPlayback = async () => {
     setIsPlaying(false);
+    if (hasLoadedAudio()) {
+      try {
+        await invoke('player_pause');
+        await invoke('player_seek', { position: 0 });
+      } catch (error) {
+        setLoadStatus(`Stop failed: ${String(error)}`);
+      }
+    }
     setPlayheadTime(0);
   };
   const toggleLoop = () => setLoopEnabled((enabled) => !enabled);
   const nudgePlayhead = (deltaSeconds: number) => {
-    setPlayheadTime((time) => Math.max(0, Math.min(durationSeconds, time + deltaSeconds)));
+    void seekTo(playheadTime() + deltaSeconds);
+  };
+
+  const loadAudioPath = async (path: string) => {
+    setLoadStatus('Loading audio...');
+    try {
+      const position = await invoke<PositionPayload>('player_load', { path });
+      setHasLoadedAudio(true);
+      setTrackTitle(fileTitleFromPath(path));
+      setTrackDuration(position.duration > 0 ? position.duration : MOCK_DURATION_SECONDS);
+      setPlayheadTime(position.position);
+      setIsPlaying(false);
+      setLoadStatus('Loaded through AVFoundation');
+    } catch (error) {
+      setHasLoadedAudio(false);
+      setLoadStatus(`Load failed: ${String(error)}`);
+    }
+  };
+
+  const onAudioFileChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0] as TauriFile | undefined;
+    if (!file) return;
+    if (!file.path) {
+      setTrackTitle(file.name.replace(/\.[^.]+$/, '') || file.name);
+      setLoadStatus('Chrome preview can read the name only. Open this in the Tauri app for full path playback.');
+      input.value = '';
+      return;
+    }
+    void loadAudioPath(file.path);
+    input.value = '';
   };
 
   const startEditingNote = (note: Note) => {
@@ -361,21 +570,35 @@ function App() {
 
   const exportComplianceReport = () => {
     const platform = targetPlatform();
-    const lufsDiff = Math.abs(currentIntegratedLufs - platform.target);
-    const peakHeadroom = platform.truePeak - currentTruePeak;
+    const lufsDiff = Math.abs(selectedIntegratedLufs() - platform.target);
+    const peakHeadroom = platform.truePeak - selectedTruePeak();
     const lines = [
       'Pik Pro Player - Loudness Compliance Report',
       `Generated: ${new Date().toLocaleString()}`,
       `Track: ${trackTitle()}`,
+      `Version: ${activeVersion().label} - ${activeVersion().title}`,
       '',
       `Target Platform: ${platform.label}${platform.note ? ` (${platform.note})` : ''}`,
       `Target Loudness: ${platform.target} LKFS (tolerance +/-${platform.tolerance ?? 1} LU)`,
       `Max True Peak: ${platform.truePeak} dBTP`,
       '',
-      `Measured Integrated LUFS: ${currentIntegratedLufs} LUFS -> ${statusLabel[lufsStatus()].toUpperCase()} (diff ${lufsDiff.toFixed(1)} LU vs target)`,
-      `Measured True Peak: ${currentTruePeak} dBTP -> ${statusLabel[truePeakStatus()].toUpperCase()} (headroom ${peakHeadroom.toFixed(1)} dB vs limit)`,
+      `Measured Integrated LUFS: ${selectedIntegratedLufs()} LUFS -> ${statusLabel[lufsStatus()].toUpperCase()} (diff ${lufsDiff.toFixed(1)} LU vs target)`,
+      `Measured True Peak: ${selectedTruePeak()} dBTP -> ${statusLabel[truePeakStatus()].toUpperCase()} (headroom ${peakHeadroom.toFixed(1)} dB vs limit)`,
     ];
     downloadTextFile(`${safeFileName(trackTitle())}-loudness-report.txt`, lines.join('\n'), 'text/plain;charset=utf-8');
+  };
+
+  const onReferenceFileChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    setReferenceTrack({
+      name: file.name,
+      source: 'file',
+      integratedLufs: defaultReferenceTrack.integratedLufs,
+      truePeak: defaultReferenceTrack.truePeak,
+    });
+    input.value = '';
   };
 
   createEffect(() => {
@@ -385,6 +608,27 @@ function App() {
   });
 
   onMount(() => {
+    const unlisteners: Array<() => void> = [];
+    if (isTauriRuntime()) {
+      listen<PositionPayload>('av:position', (event) => {
+        const { position, duration } = event.payload;
+        const nextDuration = duration > 0 ? duration : playbackDuration();
+        setTrackDuration(nextDuration);
+        const range = lockedRange();
+        if (loopEnabled() && range.end > range.start && position >= range.end) {
+          void seekTo(range.start);
+          return;
+        }
+        setPlayheadTime(Math.max(0, Math.min(nextDuration, position)));
+      }).then((unlisten) => unlisteners.push(unlisten));
+      listen('av:playing', () => setIsPlaying(true)).then((unlisten) => unlisteners.push(unlisten));
+      listen('av:paused', () => setIsPlaying(false)).then((unlisten) => unlisteners.push(unlisten));
+      listen('av:ended', () => {
+        setIsPlaying(false);
+        if (loopEnabled()) void seekTo(lockedRange().start);
+      }).then((unlisten) => unlisteners.push(unlisten));
+    }
+
     const onGlobalKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
       if (event.key.toLowerCase() === 'n') {
@@ -395,7 +639,7 @@ function App() {
       if (event.key === ' ' || event.code === 'Space') {
         if (isControlTarget(event.target)) return;
         event.preventDefault();
-        togglePlay();
+        void togglePlay();
         return;
       }
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -415,14 +659,17 @@ function App() {
       }
     };
     window.addEventListener('keydown', onGlobalKeyDown);
-    onCleanup(() => window.removeEventListener('keydown', onGlobalKeyDown));
+    onCleanup(() => {
+      window.removeEventListener('keydown', onGlobalKeyDown);
+      unlisteners.forEach((unlisten) => unlisten());
+    });
   });
 
   const timeFromPointer = (clientX: number) => {
     if (!timelineEl) return 0;
     const rect = timelineEl.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return percent * durationSeconds;
+    return percent * playbackDuration();
   };
 
   const onTimelineDown = (event: PointerEvent) => {
@@ -434,7 +681,7 @@ function App() {
       return;
     }
     setSelectedNoteId(null);
-    setPlayheadTime(time);
+    void seekTo(time);
     setDragStart(time);
     setDragNow(time);
     setLockedRange({ start: time, end: time });
@@ -503,6 +750,16 @@ function App() {
           <div class="title-row">
             <h1>{trackTitle()}</h1>
             <div class="transport-bar">
+              <input
+                ref={audioInputEl}
+                class="transport-file-input"
+                type="file"
+                accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a,.mp4"
+                onChange={onAudioFileChange}
+              />
+              <button type="button" class="transport-btn is-load" onClick={() => audioInputEl?.click()} aria-label="Load audio file">
+                Load
+              </button>
               <button type="button" class="transport-btn is-stop" onClick={stopPlayback} aria-label="Stop">■</button>
               <button
                 type="button"
@@ -523,6 +780,7 @@ function App() {
                 🔁
               </button>
               <span class="transport-time">{formatTime(playheadTime())}</span>
+              <span class="transport-status">{loadStatus()}</span>
             </div>
           </div>
         </div>
@@ -541,8 +799,8 @@ function App() {
             </select>
           </label>
           <div class="topbar-meta">
-            <span>Dolby 7.1.4 draft</span>
-            <strong>{selectedRangeLabel()}</strong>
+            <span>{activeVersion().title}</span>
+            <strong>{activeVersion().label} · {selectedRangeLabel()}</strong>
           </div>
         </div>
       </header>
@@ -574,7 +832,7 @@ function App() {
                     {statusLabel[lufsStatus()]}
                   </span>
                 </div>
-                <strong>{lufsEnabled() ? `${currentIntegratedLufs} LUFS` : '--'}</strong>
+                <strong>{lufsEnabled() ? `${selectedIntegratedLufs()} LUFS` : '--'}</strong>
               </div>
               <div class="loudness-stats" classList={{ 'is-disabled': !lufsEnabled() }}>
                 <div>
@@ -587,7 +845,7 @@ function App() {
                 </div>
                 <div classList={{ 'is-warn': lufsEnabled() && truePeakStatus() === 'warn', 'is-fail': lufsEnabled() && truePeakStatus() === 'fail' }}>
                   <span>True Peak</span>
-                  <strong>{lufsEnabled() ? `${currentTruePeak}` : '--'}</strong>
+                  <strong>{lufsEnabled() ? `${selectedTruePeak()}` : '--'}</strong>
                 </div>
               </div>
               <div class="loudness-bar-card" classList={{ 'is-disabled': !lufsEnabled() }}>
@@ -612,7 +870,7 @@ function App() {
                   <div
                     class="loudness-current"
                     classList={{ 'is-warn': lufsStatus() === 'warn', 'is-fail': lufsStatus() === 'fail' }}
-                    style={{ left: lufsEnabled() ? loudnessPosition(currentIntegratedLufs) : '0%' }}
+                    style={{ left: lufsEnabled() ? loudnessPosition(selectedIntegratedLufs()) : '0%' }}
                   />
                   <div class="loudness-target" style={{ left: loudnessPosition(targetPlatform().target) }} />
                   <For each={loudnessTicks}>
@@ -789,8 +1047,8 @@ function App() {
                       'is-critical': note.severity === 'critical',
                     }}
                     style={{
-                      left: `${(note.rangeStart / durationSeconds) * 100}%`,
-                      width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / durationSeconds) * 100)}%`,
+                      left: `${(note.rangeStart / playbackDuration()) * 100}%`,
+                      width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / playbackDuration()) * 100)}%`,
                     }}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
@@ -816,14 +1074,14 @@ function App() {
               <div
                 class="locked-range"
                 style={{
-                  left: `${(displayRange().start / durationSeconds) * 100}%`,
-                  width: `${Math.max(0.35, ((displayRange().end - displayRange().start) / durationSeconds) * 100)}%`,
+                  left: `${(displayRange().start / playbackDuration()) * 100}%`,
+                  width: `${Math.max(0.35, ((displayRange().end - displayRange().start) / playbackDuration()) * 100)}%`,
                 }}
               />
-              <div class="playhead" style={{ left: `${(playheadTime() / durationSeconds) * 100}%` }} />
+              <div class="playhead" style={{ left: `${(playheadTime() / playbackDuration()) * 100}%` }} />
             </div>
             <div class="timeline-ticks">
-              <For each={[0, 43, 86, 129, 172, 214]}>
+              <For each={timelineTicks()}>
                 {(tick) => <span>{formatTime(tick)}</span>}
               </For>
             </div>
@@ -858,6 +1116,130 @@ function App() {
                 <div class="notes-heading-meta">
                   <small>{filteredSortedNotes().length} / {notes().length} notes</small>
                   <button type="button" class="export-link" onClick={exportNotesCsv}>Export CSV</button>
+                </div>
+              </div>
+
+              <div class="version-compare-card">
+                <div class="version-compare-head">
+                  <div>
+                    <span>Version Compare</span>
+                    <strong>{activeVersion().title}</strong>
+                  </div>
+                  <div class="version-switcher" aria-label="Mix version switcher">
+                    <For each={mixVersions}>
+                      {(version) => (
+                        <button
+                          type="button"
+                          classList={{ 'is-active': activeVersionId() === version.id }}
+                          onClick={() => setActiveVersionId(version.id)}
+                          aria-pressed={activeVersionId() === version.id}
+                        >
+                          {version.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+                <p>{activeVersion().note}</p>
+                <div class="version-metrics">
+                  <div>
+                    <span>LUFS</span>
+                    <strong>{activeVersion().integratedLufs}</strong>
+                    <small classList={{ 'is-better': versionDelta().lufs < 0, 'is-worse': versionDelta().lufs > 0 }}>
+                      {versionDelta().lufs >= 0 ? '+' : ''}{versionDelta().lufs.toFixed(1)} vs {compareVersion().label}
+                    </small>
+                  </div>
+                  <div>
+                    <span>True Peak</span>
+                    <strong>{activeVersion().truePeak}</strong>
+                    <small classList={{ 'is-better': versionDelta().truePeak < 0, 'is-worse': versionDelta().truePeak > 0 }}>
+                      {versionDelta().truePeak >= 0 ? '+' : ''}{versionDelta().truePeak.toFixed(1)} dB
+                    </small>
+                  </div>
+                  <div>
+                    <span>Open Issues</span>
+                    <strong>{activeVersion().openIssues}</strong>
+                    <small classList={{ 'is-better': versionDelta().issues < 0, 'is-worse': versionDelta().issues > 0 }}>
+                      {versionDelta().issues >= 0 ? '+' : ''}{versionDelta().issues}
+                    </small>
+                  </div>
+                </div>
+                <div class="version-foot">
+                  <span>Updated {activeVersion().updatedAt}</span>
+                  <span>Compare against {compareVersion().label}</span>
+                </div>
+              </div>
+
+              <div class="reference-card">
+                <div class="reference-head">
+                  <div>
+                    <span>Reference Track</span>
+                    <strong>{referenceTrack().name}</strong>
+                  </div>
+                  <div class="reference-actions">
+                    <input
+                      ref={referenceInputEl}
+                      class="reference-file-input"
+                      type="file"
+                      accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a"
+                      onChange={onReferenceFileChange}
+                    />
+                    <button type="button" onClick={() => referenceInputEl?.click()}>Load</button>
+                    <button type="button" onClick={() => setReferenceTrack(defaultReferenceTrack)}>Reset</button>
+                  </div>
+                </div>
+                <div class="reference-meta">
+                  <span>{referenceTrack().source === 'file' ? 'File selected' : 'Mock reference'}</span>
+                  <span>{referenceTrack().integratedLufs} LUFS</span>
+                  <span>{referenceTrack().truePeak} dBTP</span>
+                </div>
+                <svg class="reference-graph" viewBox="0 0 220 68" preserveAspectRatio="none" aria-label="Loudness over time graph">
+                  <line x1="0" y1="20" x2="220" y2="20" />
+                  <line x1="0" y1="44" x2="220" y2="44" />
+                  <polyline class="is-reference" points={referenceCurvePoints()} />
+                  <polyline class="is-current" points={currentCurvePoints()} />
+                  <line
+                    class="is-playhead"
+                    x1={(playheadTime() / playbackDuration()) * 220}
+                    x2={(playheadTime() / playbackDuration()) * 220}
+                    y1="4"
+                    y2="64"
+                  />
+                </svg>
+                <div class="reference-legend">
+                  <span><i class="is-current" />Active mix</span>
+                  <span><i class="is-reference" />Reference</span>
+                </div>
+              </div>
+
+              <div class="phase-card">
+                <div class="phase-head">
+                  <div>
+                    <span>Phase / Spectrum</span>
+                    <strong>Mix Integrity</strong>
+                  </div>
+                  <strong class="phase-score">{correlationValue().toFixed(2)}</strong>
+                </div>
+                <div class="phase-meter">
+                  <span>-1</span>
+                  <div>
+                    <i style={{ left: `${((correlationValue() + 1) / 2) * 100}%` }} />
+                  </div>
+                  <span>+1</span>
+                </div>
+                <div class="phase-meta">
+                  <span>Correlation</span>
+                  <strong>{phaseOffset()}° phase offset</strong>
+                </div>
+                <div class="spectrum-bars" aria-label="Spectrum analyzer preview">
+                  <For each={spectrumBands}>
+                    {(band) => (
+                      <div>
+                        <i style={{ height: `${activeVersionId() === 'b' ? Math.max(18, band.value - 6) : band.value}%` }} />
+                        <span>{band.label}</span>
+                      </div>
+                    )}
+                  </For>
                 </div>
               </div>
 
