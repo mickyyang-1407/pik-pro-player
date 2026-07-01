@@ -127,6 +127,7 @@ function App() {
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [notes, setNotes] = createSignal(seedNotes);
   const [editingNoteId, setEditingNoteId] = createSignal<number | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = createSignal<number | null>(null);
   const [trackTitle] = createSignal('No File Loaded');
   const [isPlaying, setIsPlaying] = createSignal(false);
   const [playheadTime, setPlayheadTime] = createSignal(0);
@@ -273,7 +274,19 @@ function App() {
   const deleteNote = (id: number) => {
     setNotes((current) => current.filter((note) => note.id !== id));
     setEditingNoteId((current) => (current === id ? null : current));
+    setSelectedNoteId((current) => (current === id ? null : current));
   };
+
+  const selectNote = (note: Note) => {
+    setSelectedNoteId(note.id);
+    setLockedRange({ start: note.rangeStart, end: note.rangeEnd });
+  };
+
+  createEffect(() => {
+    const id = selectedNoteId();
+    if (id === null) return;
+    document.querySelector(`[data-note-id="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
 
   onMount(() => {
     const onGlobalKeyDown = (event: KeyboardEvent) => {
@@ -285,7 +298,7 @@ function App() {
       }
       if (event.key === 'Enter') {
         const range = lockedRange();
-        if (range.end > range.start) {
+        if (selectedNoteId() === null && range.end > range.start) {
           event.preventDefault();
           addRangeNoteDraft();
         }
@@ -306,10 +319,11 @@ function App() {
     if (event.button !== 0) return;
     const time = timeFromPointer(event.clientX);
     const range = lockedRange();
-    if (range.end > range.start && time >= range.start && time <= range.end) {
+    if (selectedNoteId() === null && range.end > range.start && time >= range.start && time <= range.end) {
       addRangeNoteDraft();
       return;
     }
+    setSelectedNoteId(null);
     setDragStart(time);
     setDragNow(time);
     setLockedRange({ start: time, end: time });
@@ -584,7 +598,7 @@ function App() {
                       </button>
                     )}
                   </For>
-                  <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSoloGroups(new Set<Speaker['group']>()); setActiveSpeakers(new Set<string>()); }}>
+                  <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSelectedNoteId(null); setSoloGroups(new Set<Speaker['group']>()); setActiveSpeakers(new Set<string>()); }}>
                     Clear
                   </button>
                 </div>
@@ -653,7 +667,7 @@ function App() {
                 {(note) => (
                   <div
                     class="note-range"
-                    classList={{ 'is-point': note.kind === 'point' }}
+                    classList={{ 'is-point': note.kind === 'point', 'is-selected': selectedNoteId() === note.id }}
                     style={{
                       left: `${(note.rangeStart / durationSeconds) * 100}%`,
                       width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / durationSeconds) * 100)}%`,
@@ -661,7 +675,7 @@ function App() {
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      setLockedRange({ start: note.rangeStart, end: note.rangeEnd });
+                      selectNote(note);
                     }}
                     title={note.body || 'Empty note'}
                   >
@@ -732,7 +746,7 @@ function App() {
               <button
                 type="button"
                 class="primary-action"
-                disabled={displayRange().end <= displayRange().start}
+                disabled={displayRange().end <= displayRange().start || selectedNoteId() !== null}
                 onClick={addRangeNoteDraft}
               >
                 Add Range Note
@@ -742,9 +756,13 @@ function App() {
               <div class="note-list">
                 <For each={notes()}>
                   {(note) => (
-                    <article class="note-item" classList={{ 'is-point': note.kind === 'point' }}>
+                    <article
+                      class="note-item"
+                      classList={{ 'is-point': note.kind === 'point', 'is-selected': selectedNoteId() === note.id }}
+                      data-note-id={note.id}
+                    >
                       <div>
-                        <strong onClick={() => setLockedRange({ start: note.rangeStart, end: note.rangeEnd })}>
+                        <strong onClick={() => selectNote(note)}>
                           {note.kind === 'point' ? formatTime(note.rangeStart) : `${formatTime(note.rangeStart)} - ${formatTime(note.rangeEnd)}`}
                         </strong>
                         <div class="note-item-actions">

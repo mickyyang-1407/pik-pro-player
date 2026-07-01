@@ -1164,6 +1164,17 @@ button {
   box-shadow: 0 0 0 1px rgba(0, 143, 176, 0.5);
 }
 
+.note-range.is-selected {
+  background: rgba(0, 167, 200, 0.38);
+  border-color: var(--cyan-strong);
+  box-shadow: 0 0 0 3px rgba(0, 167, 200, 0.4);
+  z-index: 1;
+}
+
+.note-range.is-point.is-selected {
+  box-shadow: 0 0 0 4px rgba(0, 167, 200, 0.45);
+}
+
 .note-range-delete {
   position: absolute;
   top: 2px;
@@ -1373,6 +1384,11 @@ button {
 
 .note-item.is-point {
   border-left: 3px solid var(--cyan);
+}
+
+.note-item.is-selected {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px var(--cyan-soft);
 }
 
 .note-item div {
