@@ -126,6 +126,8 @@ function App() {
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [notes, setNotes] = createSignal(seedNotes);
+  const sortedNotes = createMemo(() => [...notes()].sort((a, b) => a.rangeStart - b.rangeStart));
+  const [generalNote, setGeneralNote] = createSignal('');
   const [editingNoteId, setEditingNoteId] = createSignal<number | null>(null);
   const [selectedNoteId, setSelectedNoteId] = createSignal<number | null>(null);
   const [trackTitle] = createSignal('No File Loaded');
@@ -254,6 +256,7 @@ function App() {
   const startEditingNote = (note: Note) => {
     setNotes((current) => [note, ...current]);
     setEditingNoteId(note.id);
+    setSelectedNoteId(note.id);
   };
 
   const addPointNoteAtPlayhead = () => {
@@ -663,7 +666,7 @@ function App() {
               onPointerUp={onTimelineUp}
               onPointerCancel={onTimelineUp}
             >
-              <For each={notes()}>
+              <For each={sortedNotes()}>
                 {(note) => (
                   <div
                     class="note-range"
@@ -738,6 +741,15 @@ function App() {
                 <small>{notes().length} notes</small>
               </div>
 
+              <div class="general-note-card">
+                <span>General Note</span>
+                <textarea
+                  value={generalNote()}
+                  onInput={(event) => setGeneralNote(event.currentTarget.value)}
+                  placeholder="Overall mix impressions, loudness concerns, delivery reminders..."
+                />
+              </div>
+
               <div class="locked-card">
                 <span>Current locked timecode</span>
                 <strong>{selectedRangeLabel()}</strong>
@@ -754,7 +766,7 @@ function App() {
               <p class="note-hint">Press <kbd>N</kbd> anytime to drop a note at the playhead.</p>
 
               <div class="note-list">
-                <For each={notes()}>
+                <For each={sortedNotes()}>
                   {(note) => (
                     <article
                       class="note-item"
