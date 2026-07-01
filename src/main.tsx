@@ -1,4 +1,4 @@
-import { For, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import './styles.css';
@@ -18,10 +18,18 @@ type Note = {
   rangeEnd: number;
   body: string;
   status: 'open' | 'checking' | 'done';
+  kind: 'point' | 'range';
 };
 
 const durationSeconds = 214;
 const zoomOptions = [50, 75, 100, 125, 150];
+
+const currentIntegratedLufs = -14.2;
+const currentTruePeak = -1.1;
+
+type TargetStatus = 'pass' | 'warn' | 'fail';
+
+const statusLabel: Record<TargetStatus, string> = { pass: 'Pass', warn: 'Warn', fail: 'Fail' };
 
 const speakers: Speaker[] = [
   { label: 'L',   group: 'front', area: 'left' },
@@ -54,10 +62,11 @@ const meterRows = [
 ];
 
 const loudnessTicks = ['-inf', '-54', '-45', '-36', '-16', '-9', '-6', '-3', '0'];
+const ppmTicks = ['-inf', '-54', '-45', '-36', '-27', '-24', '-18', '-9', '-6', '-1'];
 
 const loudnessPosition = (value: number) => `${Math.max(0, Math.min(100, ((value + 60) / 60) * 100))}%`;
 
-type TargetPlatform = { id: string; label: string; target: number; truePeak: number; note?: string };
+type TargetPlatform = { id: string; label: string; target: number; truePeak: number; tolerance?: number; note?: string };
 
 // Stereo/broadcast targets: widely published industry norms (Spotify/YouTube -14, Apple Sound Check -16,
 // Amazon Music -14/-2dBTP, EBU R128 -23, ATSC A/85 -24).
@@ -73,8 +82,8 @@ const targetPlatforms: TargetPlatform[] = [
   { id: 'amazon', label: 'Amazon Music (-14)', target: -14, truePeak: -2 },
   { id: 'ebu', label: 'EBU R128 (-23)', target: -23, truePeak: -1 },
   { id: 'atsc', label: 'ATSC A/85 (-24)', target: -24, truePeak: -2 },
-  { id: 'atmos-music', label: 'Dolby Atmos Music (-18)', target: -18, truePeak: -1, note: 'Apple Music / Amazon Music / Tidal' },
-  { id: 'atmos-netflix', label: 'Netflix Atmos (-27)', target: -27, truePeak: -2, note: 'dialogue-gated ±2 LU, BS.1770-1' },
+  { id: 'atmos-music', label: 'Atmos Music (-18)', target: -18, truePeak: -1, note: 'Dolby Atmos: Apple Music / Amazon Music / Tidal' },
+  { id: 'atmos-netflix', label: 'Netflix Atmos (-27)', target: -27, truePeak: -2, tolerance: 2, note: 'dialogue-gated ±2 LU, BS.1770-1' },
 ];
 
 const seedNotes: Note[] = [
@@ -84,6 +93,7 @@ const seedNotes: Note[] = [
     rangeEnd: 58,
     body: 'Verse low-mid feels crowded. Try a tighter pocket around 180 Hz.',
     status: 'open',
+    kind: 'range',
   },
   {
     id: 2,
@@ -91,6 +101,7 @@ const seedNotes: Note[] = [
     rangeEnd: 153,
     body: 'Chorus lift works. Check vocal edge after the downbeat.',
     status: 'checking',
+    kind: 'range',
   },
 ];
 
@@ -101,19 +112,80 @@ function formatTime(seconds: number) {
   return `${minutes.toString().padStart(2, '0')}:${wholeSeconds.toString().padStart(2, '0')}`;
 }
 
+let noteIdSeed = 100;
+const nextNoteId = () => ++noteIdSeed;
+
+const isTypingTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable;
+};
+
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
   const [zoom, setZoom] = createSignal(100);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
-  const [draft, setDraft] = createSignal('');
   const [notes, setNotes] = createSignal(seedNotes);
+  const [editingNoteId, setEditingNoteId] = createSignal<number | null>(null);
+  const [trackTitle] = createSignal('No File Loaded');
+  const [isPlaying, setIsPlaying] = createSignal(false);
+  const [playheadTime, setPlayheadTime] = createSignal(0);
+  const [loopEnabled, setLoopEnabled] = createSignal(false);
   const [activeSpeakers, setActiveSpeakers] = createSignal<Set<string>>(new Set(['C']));
   const [soloGroups, setSoloGroups] = createSignal<Set<Speaker['group']>>(new Set());
   const [speakerMode, setSpeakerMode] = createSignal<'solo' | 'mute'>('solo');
+
+  const toggleGroup = (groupId: Speaker['group'], shift: boolean) => {
+    if (shift) {
+      setSoloGroups((prev) => {
+        const next = new Set(prev);
+        if (next.has(groupId)) next.delete(groupId);
+        else next.add(groupId);
+        return next;
+      });
+      return;
+    }
+    const isSoleSelection = soloGroups().size === 1 && soloGroups().has(groupId) && activeSpeakers().size === 0;
+    setActiveSpeakers(new Set<string>());
+    setSoloGroups(isSoleSelection ? new Set<Speaker['group']>() : new Set<Speaker['group']>([groupId]));
+  };
+
+  const toggleSpeaker = (label: string, shift: boolean) => {
+    if (shift) {
+      setActiveSpeakers((prev) => {
+        const next = new Set(prev);
+        if (next.has(label)) next.delete(label);
+        else next.add(label);
+        return next;
+      });
+      return;
+    }
+    const isSoleSelection = activeSpeakers().size === 1 && activeSpeakers().has(label) && soloGroups().size === 0;
+    setSoloGroups(new Set<Speaker['group']>());
+    setActiveSpeakers(isSoleSelection ? new Set<string>() : new Set<string>([label]));
+  };
+
+  const selectionLabel = createMemo(() => {
+    const parts = [...soloGroups()].map((g) => g.toUpperCase()).concat([...activeSpeakers()]);
+    if (parts.length === 0) return 'All';
+    return `${parts.join('+')} ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}`;
+  });
   const [lufsEnabled, setLufsEnabled] = createSignal(true);
   const [targetPlatformId, setTargetPlatformId] = createSignal(targetPlatforms[0].id);
   const targetPlatform = createMemo(() => targetPlatforms.find((p) => p.id === targetPlatformId()) ?? targetPlatforms[0]);
+  const lufsStatus = createMemo<TargetStatus>(() => {
+    const tolerance = targetPlatform().tolerance ?? 1;
+    const diff = Math.abs(currentIntegratedLufs - targetPlatform().target);
+    if (diff <= tolerance) return 'pass';
+    if (diff <= tolerance + 2) return 'warn';
+    return 'fail';
+  });
+  const truePeakStatus = createMemo<TargetStatus>(() => {
+    const headroom = targetPlatform().truePeak - currentTruePeak;
+    if (headroom >= 0) return 'pass';
+    if (headroom >= -0.5) return 'warn';
+    return 'fail';
+  });
   const [ppmEnabled, setPpmEnabled] = createSignal(true);
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
@@ -144,6 +216,85 @@ function App() {
     () => `${formatTime(displayRange().start)} - ${formatTime(displayRange().end)}`
   );
 
+  let playTimer: ReturnType<typeof setInterval> | undefined;
+  createEffect(() => {
+    if (isPlaying()) {
+      if (playTimer) return;
+      playTimer = setInterval(() => {
+        setPlayheadTime((t) => {
+          const next = t + 0.1;
+          const range = lockedRange();
+          if (loopEnabled() && range.end > range.start) {
+            return next >= range.end ? range.start : next;
+          }
+          if (next >= durationSeconds) {
+            setIsPlaying(false);
+            return durationSeconds;
+          }
+          return next;
+        });
+      }, 100);
+    } else if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = undefined;
+    }
+  });
+  onCleanup(() => {
+    if (playTimer) clearInterval(playTimer);
+  });
+
+  const togglePlay = () => setIsPlaying((playing) => !playing);
+  const stopPlayback = () => {
+    setIsPlaying(false);
+    setPlayheadTime(0);
+  };
+  const toggleLoop = () => setLoopEnabled((enabled) => !enabled);
+
+  const startEditingNote = (note: Note) => {
+    setNotes((current) => [note, ...current]);
+    setEditingNoteId(note.id);
+  };
+
+  const addPointNoteAtPlayhead = () => {
+    const time = playheadTime();
+    startEditingNote({ id: nextNoteId(), rangeStart: time, rangeEnd: time, body: '', status: 'open', kind: 'point' });
+  };
+
+  const addRangeNoteDraft = () => {
+    const range = displayRange();
+    if (range.end <= range.start) return;
+    startEditingNote({ id: nextNoteId(), rangeStart: range.start, rangeEnd: range.end, body: '', status: 'open', kind: 'range' });
+  };
+
+  const updateNoteBody = (id: number, body: string) => {
+    setNotes((current) => current.map((note) => (note.id === id ? { ...note, body } : note)));
+  };
+
+  const deleteNote = (id: number) => {
+    setNotes((current) => current.filter((note) => note.id !== id));
+    setEditingNoteId((current) => (current === id ? null : current));
+  };
+
+  onMount(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      if (event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        addPointNoteAtPlayhead();
+        return;
+      }
+      if (event.key === 'Enter') {
+        const range = lockedRange();
+        if (range.end > range.start) {
+          event.preventDefault();
+          addRangeNoteDraft();
+        }
+      }
+    };
+    window.addEventListener('keydown', onGlobalKeyDown);
+    onCleanup(() => window.removeEventListener('keydown', onGlobalKeyDown));
+  });
+
   const timeFromPointer = (clientX: number) => {
     if (!timelineEl) return 0;
     const rect = timelineEl.getBoundingClientRect();
@@ -154,6 +305,11 @@ function App() {
   const onTimelineDown = (event: PointerEvent) => {
     if (event.button !== 0) return;
     const time = timeFromPointer(event.clientX);
+    const range = lockedRange();
+    if (range.end > range.start && time >= range.start && time <= range.end) {
+      addRangeNoteDraft();
+      return;
+    }
     setDragStart(time);
     setDragNow(time);
     setLockedRange({ start: time, end: time });
@@ -213,30 +369,37 @@ function App() {
     onCleanup(() => ro.disconnect());
   });
 
-  const addNote = () => {
-    const text = draft().trim();
-    if (!text) return;
-    const range = lockedRange();
-    setNotes((current) => [
-      {
-        id: Date.now(),
-        rangeStart: range.start,
-        rangeEnd: range.end,
-        body: text,
-        status: 'open',
-      },
-      ...current,
-    ]);
-    setDraft('');
-  };
-
   return (
     <main class="review-app" style={{ '--ui-zoom': `${zoom() / 100}` }}>
       <div class="scaled-app">
       <header class="topbar">
-        <div>
+        <div class="topbar-title">
           <p class="eyebrow">Pik Pro Player</p>
-          <h1>Mix Review Workspace</h1>
+          <div class="title-row">
+            <h1>{trackTitle()}</h1>
+            <div class="transport-bar">
+              <button type="button" class="transport-btn is-stop" onClick={stopPlayback} aria-label="Stop">■</button>
+              <button
+                type="button"
+                class="transport-btn is-play"
+                classList={{ 'is-active': isPlaying() }}
+                onClick={togglePlay}
+                aria-label={isPlaying() ? 'Pause' : 'Play'}
+              >
+                {isPlaying() ? '❚❚' : '▶'}
+              </button>
+              <button
+                type="button"
+                class="transport-btn is-loop"
+                classList={{ 'is-active': loopEnabled() }}
+                onClick={toggleLoop}
+                aria-label="Loop"
+              >
+                🔁
+              </button>
+              <span class="transport-time">{formatTime(playheadTime())}</span>
+            </div>
+          </div>
         </div>
         <div class="topbar-controls">
           <label class="zoom-control">
@@ -277,23 +440,29 @@ function App() {
                 </button>
               </div>
               <div class="loudness-readout" classList={{ 'is-disabled': !lufsEnabled() }}>
-                <div>
+                <div class="loudness-readout-head">
                   <span>Integrated</span>
-                  <strong>{lufsEnabled() ? '-14.2 LUFS' : '--'}</strong>
+                  <span
+                    class="status-pill"
+                    classList={{ 'is-pass': lufsStatus() === 'pass', 'is-warn': lufsStatus() === 'warn', 'is-fail': lufsStatus() === 'fail' }}
+                  >
+                    {statusLabel[lufsStatus()]}
+                  </span>
                 </div>
+                <strong>{lufsEnabled() ? `${currentIntegratedLufs} LUFS` : '--'}</strong>
+              </div>
+              <div class="loudness-stats" classList={{ 'is-disabled': !lufsEnabled() }}>
                 <div>
                   <span>Range</span>
                   <strong>{lufsEnabled() ? '7.6 LU' : '--'}</strong>
                 </div>
-              </div>
-              <div class="loudness-stats" classList={{ 'is-disabled': !lufsEnabled() }}>
                 <div>
                   <span>Short</span>
                   <strong>{lufsEnabled() ? '-12.8' : '--'}</strong>
                 </div>
-                <div>
+                <div classList={{ 'is-warn': lufsEnabled() && truePeakStatus() === 'warn', 'is-fail': lufsEnabled() && truePeakStatus() === 'fail' }}>
                   <span>True Peak</span>
-                  <strong>{lufsEnabled() ? '-1.1' : '--'}</strong>
+                  <strong>{lufsEnabled() ? `${currentTruePeak}` : '--'}</strong>
                 </div>
               </div>
               <div class="loudness-bar-card" classList={{ 'is-disabled': !lufsEnabled() }}>
@@ -312,7 +481,11 @@ function App() {
                 </div>
                 <div class="loudness-scale">
                   <div class="loudness-track" />
-                  <div class="loudness-current" style={{ left: lufsEnabled() ? loudnessPosition(-14.2) : '0%' }} />
+                  <div
+                    class="loudness-current"
+                    classList={{ 'is-warn': lufsStatus() === 'warn', 'is-fail': lufsStatus() === 'fail' }}
+                    style={{ left: lufsEnabled() ? loudnessPosition(currentIntegratedLufs) : '0%' }}
+                  />
                   <div class="loudness-target" style={{ left: loudnessPosition(targetPlatform().target) }} />
                   <For each={loudnessTicks}>
                     {(tick) => (
@@ -337,7 +510,7 @@ function App() {
                 <div class="meter-head">
                   <div>
                     <span>PPM</span>
-                    <strong>12 Channels</strong>
+                    <strong>dB Scale</strong>
                   </div>
                   <button
                     type="button"
@@ -348,6 +521,12 @@ function App() {
                   </button>
                 </div>
                 <div class="ppm-grid">
+                  <div class="ppm-scale-row">
+                    <span class="ppm-scale-spacer" />
+                    <div class="ppm-scale-ticks">
+                      <For each={ppmTicks}>{(tick) => <span>{tick}</span>}</For>
+                    </div>
+                  </div>
                   <div class="ppm-meters">
                     <For each={meterRows}>
                       {(meter) => (
@@ -399,20 +578,7 @@ function App() {
                           'is-solo': soloGroups().has(group.id) && speakerMode() === 'solo',
                           'is-mute': soloGroups().has(group.id) && speakerMode() === 'mute',
                         }}
-                        onClick={(e) => {
-                          setSoloGroups((prev) => {
-                            const next = new Set(prev);
-                            if (e.shiftKey) {
-                              if (next.has(group.id)) next.delete(group.id);
-                              else next.add(group.id);
-                            } else {
-                              if (next.size === 1 && next.has(group.id)) next.clear();
-                              else { next.clear(); next.add(group.id); }
-                            }
-                            return next;
-                          });
-                          setActiveSpeakers(new Set<string>());
-                        }}
+                        onClick={(e) => toggleGroup(group.id, e.shiftKey)}
                       >
                         {group.label}
                       </button>
@@ -425,7 +591,7 @@ function App() {
               </div>
               <div class="speaker-view-title">
                 <span>Speaker View</span>
-                <strong classList={{ 'is-mute-label': (soloGroups().size > 0 || activeSpeakers().size > 0) && speakerMode() === 'mute' }}>{soloGroups().size > 0 ? [...soloGroups()].map(g => g.toUpperCase()).join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : activeSpeakers().size > 0 ? [...activeSpeakers()].join('+') + ` ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}` : 'All'}</strong>
+                <strong classList={{ 'is-mute-label': (soloGroups().size > 0 || activeSpeakers().size > 0) && speakerMode() === 'mute' }}>{selectionLabel()}</strong>
               </div>
               <div class="room-plane" ref={roomPlaneEl}>
                 <div class="screen-line">SCREEN</div>
@@ -450,20 +616,7 @@ function App() {
                             'is-muted': isActive() && speakerMode() === 'mute',
                           }}
                           style={{ 'grid-area': speaker.area }}
-                          onClick={(e) => {
-                            setSoloGroups(new Set<Speaker['group']>());
-                            setActiveSpeakers((prev) => {
-                              const next = new Set(prev);
-                              if (e.shiftKey) {
-                                if (next.has(speaker.label)) next.delete(speaker.label);
-                                else next.add(speaker.label);
-                              } else {
-                                if (next.size === 1 && next.has(speaker.label)) next.clear();
-                                else { next.clear(); next.add(speaker.label); }
-                              }
-                              return next;
-                            });
-                          }}
+                          onClick={(e) => toggleSpeaker(speaker.label, e.shiftKey)}
                           aria-pressed={isActive()}
                         >
                           {speaker.label}
@@ -482,6 +635,11 @@ function App() {
                 <span>Locked Range</span>
                 <strong>{selectedRangeLabel()}</strong>
               </div>
+              <div class="timeline-hotkeys">
+                <span><kbd>N</kbd> Note at playhead</span>
+                <span><kbd>Enter</kbd> Range note</span>
+                <span>Drag = select range</span>
+              </div>
             </div>
             <div
               ref={timelineEl}
@@ -495,11 +653,30 @@ function App() {
                 {(note) => (
                   <div
                     class="note-range"
+                    classList={{ 'is-point': note.kind === 'point' }}
                     style={{
                       left: `${(note.rangeStart / durationSeconds) * 100}%`,
-                      width: `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / durationSeconds) * 100)}%`,
+                      width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / durationSeconds) * 100)}%`,
                     }}
-                  />
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setLockedRange({ start: note.rangeStart, end: note.rangeEnd });
+                    }}
+                    title={note.body || 'Empty note'}
+                  >
+                    <button
+                      type="button"
+                      class="note-range-delete"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deleteNote(note.id);
+                      }}
+                      aria-label="Delete note"
+                    >
+                      ×
+                    </button>
+                  </div>
                 )}
               </For>
               <div
@@ -509,6 +686,7 @@ function App() {
                   width: `${Math.max(0.35, ((displayRange().end - displayRange().start) / durationSeconds) * 100)}%`,
                 }}
               />
+              <div class="playhead" style={{ left: `${(playheadTime() / durationSeconds) * 100}%` }} />
             </div>
             <div class="timeline-ticks">
               <For each={[0, 43, 86, 129, 172, 214]}>
@@ -551,30 +729,63 @@ function App() {
                 <strong>{selectedRangeLabel()}</strong>
               </div>
 
-              <label class="note-editor">
-                <span>New note</span>
-                <textarea
-                  value={draft()}
-                  onInput={(event) => setDraft(event.currentTarget.value)}
-                  placeholder="Write the note for the selected time range..."
-                />
-              </label>
-              <button type="button" class="primary-action" onClick={addNote}>
+              <button
+                type="button"
+                class="primary-action"
+                disabled={displayRange().end <= displayRange().start}
+                onClick={addRangeNoteDraft}
+              >
                 Add Range Note
               </button>
+              <p class="note-hint">Press <kbd>N</kbd> anytime to drop a note at the playhead.</p>
 
               <div class="note-list">
                 <For each={notes()}>
                   {(note) => (
-                    <article
-                      class="note-item"
-                      onClick={() => setLockedRange({ start: note.rangeStart, end: note.rangeEnd })}
-                    >
+                    <article class="note-item" classList={{ 'is-point': note.kind === 'point' }}>
                       <div>
-                        <strong>{`${formatTime(note.rangeStart)} - ${formatTime(note.rangeEnd)}`}</strong>
-                        <span>{note.status}</span>
+                        <strong onClick={() => setLockedRange({ start: note.rangeStart, end: note.rangeEnd })}>
+                          {note.kind === 'point' ? formatTime(note.rangeStart) : `${formatTime(note.rangeStart)} - ${formatTime(note.rangeEnd)}`}
+                        </strong>
+                        <div class="note-item-actions">
+                          <span>{note.status}</span>
+                          <button
+                            type="button"
+                            class="note-delete"
+                            onClick={() => deleteNote(note.id)}
+                            aria-label="Delete note"
+                          >
+                            ×
+                          </button>
+                        </div>
                       </div>
-                      <p>{note.body}</p>
+                      {editingNoteId() === note.id ? (
+                        <textarea
+                          class="note-item-editor"
+                          ref={(el) => {
+                            el.value = note.body;
+                            el.focus();
+                          }}
+                          onBlur={(event) => {
+                            updateNoteBody(note.id, event.currentTarget.value);
+                            setEditingNoteId(null);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.shiftKey) {
+                              event.preventDefault();
+                              updateNoteBody(note.id, event.currentTarget.value);
+                              setEditingNoteId(null);
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setEditingNoteId(null);
+                            }
+                          }}
+                          placeholder="Type your note..."
+                        />
+                      ) : (
+                        <p onClick={() => setEditingNoteId(note.id)}>{note.body || 'Click to add note text…'}</p>
+                      )}
                     </article>
                   )}
                 </For>
