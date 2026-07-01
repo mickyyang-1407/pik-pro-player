@@ -57,6 +57,26 @@ const loudnessTicks = ['-inf', '-54', '-45', '-36', '-16', '-9', '-6', '-3', '0'
 
 const loudnessPosition = (value: number) => `${Math.max(0, Math.min(100, ((value + 60) / 60) * 100))}%`;
 
+type TargetPlatform = { id: string; label: string; target: number; truePeak: number; note?: string };
+
+// Stereo/broadcast targets: widely published industry norms (Spotify/YouTube -14, Apple Sound Check -16,
+// Amazon Music -14/-2dBTP, EBU R128 -23, ATSC A/85 -24).
+// Atmos entries verified 2026-07-01 against official sources:
+//   - Dolby Atmos Music (Apple Music / Amazon Music / Tidal): -18 LKFS, -1 dBTP
+//     https://www.dolby.com/siteassets/dolby-creator-lab/dolby-atmos-music-accelerator/dolby-atmos-music-delivery-playbook-1.pdf
+//   - Netflix Dolby Atmos Home Mix: -27 LKFS +/-2 LU dialogue-gated (ITU-R BS.1770-1), -2 dBFS true peak
+//     https://partnerhelp.netflixstudios.com/hc/en-us/articles/115001539991-Netflix-Dolby-Atmos-Home-Mix-Deliverable-Requirements-v2-3
+const targetPlatforms: TargetPlatform[] = [
+  { id: 'apple', label: 'Apple Music (-16)', target: -16, truePeak: -1 },
+  { id: 'spotify', label: 'Spotify (-14)', target: -14, truePeak: -1 },
+  { id: 'youtube', label: 'YouTube (-14)', target: -14, truePeak: -1 },
+  { id: 'amazon', label: 'Amazon Music (-14)', target: -14, truePeak: -2 },
+  { id: 'ebu', label: 'EBU R128 (-23)', target: -23, truePeak: -1 },
+  { id: 'atsc', label: 'ATSC A/85 (-24)', target: -24, truePeak: -2 },
+  { id: 'atmos-music', label: 'Dolby Atmos Music (-18)', target: -18, truePeak: -1, note: 'Apple Music / Amazon Music / Tidal' },
+  { id: 'atmos-netflix', label: 'Netflix Atmos (-27)', target: -27, truePeak: -2, note: 'dialogue-gated ±2 LU, BS.1770-1' },
+];
+
 const seedNotes: Note[] = [
   {
     id: 1,
@@ -92,6 +112,8 @@ function App() {
   const [soloGroups, setSoloGroups] = createSignal<Set<Speaker['group']>>(new Set());
   const [speakerMode, setSpeakerMode] = createSignal<'solo' | 'mute'>('solo');
   const [lufsEnabled, setLufsEnabled] = createSignal(true);
+  const [targetPlatformId, setTargetPlatformId] = createSignal(targetPlatforms[0].id);
+  const targetPlatform = createMemo(() => targetPlatforms.find((p) => p.id === targetPlatformId()) ?? targetPlatforms[0]);
   const [ppmEnabled, setPpmEnabled] = createSignal(true);
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
@@ -277,15 +299,24 @@ function App() {
               <div class="loudness-bar-card" classList={{ 'is-disabled': !lufsEnabled() }}>
                 <div class="loudness-bar-head">
                   <span>LUFS Bar</span>
-                  <strong>Ref -16</strong>
+                  <select
+                    class="target-select"
+                    value={targetPlatformId()}
+                    onChange={(event) => setTargetPlatformId(event.currentTarget.value)}
+                  >
+                    <For each={targetPlatforms}>{(platform) => <option value={platform.id}>{platform.label}</option>}</For>
+                  </select>
+                </div>
+                <div class="target-spec-note">
+                  Max True Peak {targetPlatform().truePeak} dBTP{targetPlatform().note ? ` · ${targetPlatform().note}` : ''}
                 </div>
                 <div class="loudness-scale">
                   <div class="loudness-track" />
                   <div class="loudness-current" style={{ left: lufsEnabled() ? loudnessPosition(-14.2) : '0%' }} />
-                  <div class="loudness-target" style={{ left: loudnessPosition(-16) }} />
+                  <div class="loudness-target" style={{ left: loudnessPosition(targetPlatform().target) }} />
                   <For each={loudnessTicks}>
                     {(tick) => (
-                      <span class="loudness-tick" classList={{ 'is-target': tick === '-16' }} style={{ left: tick === '-inf' ? '0%' : loudnessPosition(Number(tick)) }}>
+                      <span class="loudness-tick" classList={{ 'is-target': tick !== '-inf' && Number(tick) === targetPlatform().target }} style={{ left: tick === '-inf' ? '0%' : loudnessPosition(Number(tick)) }}>
                         {tick}
                       </span>
                     )}

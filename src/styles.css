@@ -57,14 +57,14 @@ button {
   height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  padding: 22px;
-  gap: 16px;
+  padding: 16px;
+  gap: 10px;
   transform-origin: top left;
   transform: scale(var(--ui-zoom));
 }
 
 .topbar {
-  height: 76px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -78,50 +78,51 @@ button {
 
 .eyebrow {
   color: var(--cyan-strong);
-  font-size: 12px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .topbar h1 {
-  margin-top: 3px;
-  font-size: 32px;
+  margin-top: 1px;
+  font-size: 18px;
   line-height: 1;
   letter-spacing: 0;
 }
 
 .topbar-meta {
-  min-width: 220px;
+  min-width: 160px;
   text-align: right;
 }
 
 .topbar-controls {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
 }
 
 .zoom-control {
   display: grid;
-  gap: 5px;
+  gap: 2px;
   justify-items: end;
 }
 
 .zoom-control span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .zoom-control select {
-  height: 32px;
-  min-width: 86px;
+  height: 24px;
+  min-width: 64px;
   border: 1px solid rgba(0, 167, 200, 0.22);
   border-radius: 999px;
   background: var(--surface-soft);
   color: var(--cyan-strong);
+  font-size: 12px;
   font-weight: 800;
   outline: none;
   text-align: center;
@@ -134,14 +135,14 @@ button {
 
 .topbar-meta span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .topbar-meta strong {
-  margin-top: 5px;
+  margin-top: 2px;
   color: var(--cyan-strong);
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
+  font-size: 13px;
 }
 
 .workspace {
@@ -438,10 +439,29 @@ button {
   gap: 10px;
 }
 
-.loudness-bar-head strong {
+.target-select {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(0, 167, 200, 0.28);
+  border-radius: 999px;
+  background: var(--surface-soft);
   color: var(--cyan-strong);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  outline: none;
+  max-width: 160px;
+}
+
+.target-spec-note {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .loudness-scale {
@@ -497,17 +517,22 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 5px;
+  margin-top: 10px;
+}
+
+.loudness-max-stats span {
+  font-size: 9px;
 }
 
 .loudness-max-stats div {
-  padding-top: 5px;
+  padding-top: 4px;
   border-top: 1px solid rgba(20, 32, 42, 0.08);
 }
 
 .loudness-max-stats strong {
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -580,9 +605,9 @@ button {
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(0, 1fr);
-  gap: 5px 20px;
+  gap: 3px;
 }
 
 .ppm-channel {
@@ -666,7 +691,8 @@ button {
 .room-plane {
   position: relative;
   width: 100%;
-  height: 100%;
+  height: min(100%, 380px);
+  align-self: center;
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(0, 167, 200, 0.22);
