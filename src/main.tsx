@@ -276,13 +276,20 @@ function App() {
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [notes, setNotes] = createSignal(seedNotes);
-  const sortedNotes = createMemo(() => [...notes()].sort((a, b) => a.rangeStart - b.rangeStart));
+  const sortedNotes = createMemo(() => [...notes()].sort((a, b) => {
+    if (a.rangeStart === b.rangeStart) {
+      return (b.rangeEnd - b.rangeStart) - (a.rangeEnd - a.rangeStart);
+    }
+    return a.rangeStart - b.rangeStart;
+  }));
   const [generalNote, setGeneralNote] = createSignal('');
   const [editingNoteId, setEditingNoteId] = createSignal<number | null>(null);
   const [selectedNoteId, setSelectedNoteId] = createSignal<number | null>(null);
   const [noteSearch, setNoteSearch] = createSignal('');
   const [statusFilter, setStatusFilter] = createSignal<'all' | 'open' | 'checking' | 'done'>('all');
   const [severityFilter, setSeverityFilter] = createSignal<'all' | 'critical' | 'minor'>('all');
+  const [linkTimelineEdit, setLinkTimelineEdit] = createSignal(false);
+  const [lastPointNoteId, setLastPointNoteId] = createSignal<number | null>(null);
   const [activeVersionId, setActiveVersionId] = createSignal<MixVersion['id']>('a');
   const [referenceTrack, setReferenceTrack] = createSignal<ReferenceTrack>(defaultReferenceTrack);
   const filteredSortedNotes = createMemo(() => {
@@ -459,6 +466,10 @@ function App() {
         await invoke('player_pause');
         setIsPlaying(false);
       } else {
+        if (playheadTime() >= playbackDuration() - 0.1) {
+          await invoke('player_seek', { position: 0 });
+          setPlayheadTime(0);
+        }
         await invoke('player_play');
         setIsPlaying(true);
       }
@@ -536,13 +547,58 @@ function App() {
 
   const addPointNoteAtPlayhead = () => {
     const time = playheadTime();
-    startEditingNote({ id: nextNoteId(), rangeStart: time, rangeEnd: time, body: '', status: 'open', kind: 'point', severity: 'minor' });
+    const id = nextNoteId();
+    setLastPointNoteId(id);
+    setLockedRange({ start: time, end: time });
+    setDragStart(time);
+    startEditingNote({ id, rangeStart: time, rangeEnd: time, body: '', status: 'open', kind: 'point', severity: 'minor' });
   };
 
   const addRangeNoteDraft = () => {
     const range = displayRange();
     if (range.end <= range.start) return;
     startEditingNote({ id: nextNoteId(), rangeStart: range.start, rangeEnd: range.end, body: '', status: 'open', kind: 'range', severity: 'minor' });
+  };
+
+  const handleAutoListKeyDown = (event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) => {
+    if (event.key === 'Enter' && event.shiftKey) {
+      const target = event.currentTarget;
+      const value = target.value;
+      const cursor = target.selectionStart;
+      
+      const textBeforeCursor = value.substring(0, cursor);
+      const lines = textBeforeCursor.split('\n');
+      const currentLine = lines[lines.length - 1];
+      
+      const match = currentLine.match(/^(\s*)([0-9]+\.|[-*])\s(.*)$/);
+      if (match) {
+        event.preventDefault();
+        const prefix = match[1];
+        const marker = match[2];
+        const content = match[3];
+        
+        let nextMarker = marker;
+        if (/^[0-9]+\.$/.test(marker)) {
+          const num = parseInt(marker.slice(0, -1), 10);
+          nextMarker = `${num + 1}.`;
+        }
+        
+        if (content.trim() === '') {
+          const textBeforeLine = textBeforeCursor.substring(0, textBeforeCursor.length - currentLine.length);
+          const newText = textBeforeLine + '\n' + value.substring(target.selectionEnd);
+          target.value = newText;
+          target.selectionStart = target.selectionEnd = textBeforeLine.length + 1;
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          return;
+        }
+
+        const insertText = `\n${prefix}${nextMarker} `;
+        const newText = textBeforeCursor + insertText + value.substring(target.selectionEnd);
+        target.value = newText;
+        target.selectionStart = target.selectionEnd = cursor + insertText.length;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
   };
 
   const updateNoteBody = (id: number, body: string) => {
@@ -636,7 +692,7 @@ function App() {
         const nextDuration = duration > 0 ? duration : playbackDuration();
         setTrackDuration(nextDuration);
         const range = lockedRange();
-        if (loopEnabled() && range.end > range.start && position >= range.end) {
+        if (loopEnabled() && linkTimelineEdit() && range.end > range.start && position >= range.end) {
           void seekTo(range.start);
           return;
         }
@@ -646,7 +702,11 @@ function App() {
       listen('av:paused', () => setIsPlaying(false)).then((unlisten) => unlisteners.push(unlisten));
       listen('av:ended', () => {
         setIsPlaying(false);
-        if (loopEnabled()) void seekTo(lockedRange().start);
+        if (loopEnabled()) {
+          void seekTo(lockedRange().start);
+        } else {
+          void seekTo(0);
+        }
       }).then((unlisten) => unlisteners.push(unlisten));
     }
 
@@ -705,13 +765,38 @@ function App() {
   const onTimelineDown = (event: PointerEvent) => {
     if (event.button !== 0) return;
     const time = timeFromPointer(event.clientX);
+
+    if (event.shiftKey) {
+      const origin = dragStart() ?? lockedRange().start;
+      const newStart = Math.min(origin, time);
+      const newEnd = Math.max(origin, time);
+      setLockedRange({ start: newStart, end: newEnd });
+
+      const id = lastPointNoteId();
+      if (id !== null) {
+        setNotes((current) => current.map((note) => {
+          if (note.id === id && note.kind === 'point' && note.rangeStart === origin) {
+            return { ...note, kind: 'range', rangeStart: newStart, rangeEnd: newEnd };
+          }
+          return note;
+        }));
+      }
+        
+      setDragNow(time);
+      setIsDraggingTimeline(true);
+      timelineEl?.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const range = lockedRange();
     if (selectedNoteId() === null && range.end > range.start && time >= range.start && time <= range.end) {
       addRangeNoteDraft();
       return;
     }
     setSelectedNoteId(null);
-    void seekTo(time);
+    if (linkTimelineEdit()) {
+      void seekTo(time);
+    }
     setDragStart(time);
     setDragNow(time);
     setLockedRange({ start: time, end: time });
@@ -1053,10 +1138,22 @@ function App() {
                 <span>Locked Range</span>
                 <strong>{selectedRangeLabel()}</strong>
               </div>
+              <div class="timeline-options" style={{ "margin-left": "auto", "margin-right": "16px", "display": "flex", "align-items": "center", "gap": "6px" }}>
+                <input
+                  type="checkbox"
+                  id="link-timeline-edit"
+                  checked={linkTimelineEdit()}
+                  onChange={(e) => setLinkTimelineEdit(e.currentTarget.checked)}
+                />
+                <label for="link-timeline-edit" style={{ "font-size": "11px", "color": "var(--muted)", "cursor": "pointer" }}>
+                  Link Edit to Playhead
+                </label>
+              </div>
               <div class="timeline-hotkeys">
                 <span><kbd>Space</kbd> Play/Pause</span>
                 <span><kbd>←/→</kbd> Scrub</span>
                 <span><kbd>N</kbd> Note at playhead</span>
+                <span><kbd>Shift</kbd>+Click = expand last N</span>
                 <span><kbd>Enter</kbd> Range note</span>
                 <span>Drag = select range</span>
               </div>
@@ -1280,6 +1377,13 @@ function App() {
                 <textarea
                   value={generalNote()}
                   onInput={(event) => setGeneralNote(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    handleAutoListKeyDown(event);
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
                   placeholder="Overall mix impressions, loudness concerns, delivery reminders..."
                 />
               </div>
@@ -1375,13 +1479,17 @@ function App() {
                           class="note-item-editor"
                           ref={(el) => {
                             el.value = note.body;
-                            el.focus();
+                            setTimeout(() => {
+                              el.focus();
+                              el.setSelectionRange(el.value.length, el.value.length);
+                            }, 10);
                           }}
                           onBlur={(event) => {
                             updateNoteBody(note.id, event.currentTarget.value);
                             setEditingNoteId(null);
                           }}
                           onKeyDown={(event) => {
+                            handleAutoListKeyDown(event);
                             if (event.key === 'Enter' && !event.shiftKey) {
                               event.preventDefault();
                               updateNoteBody(note.id, event.currentTarget.value);
