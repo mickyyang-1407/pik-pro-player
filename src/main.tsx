@@ -299,7 +299,7 @@ function loudnessPolyline(points: LoudnessPoint[], valueOffset = 0) {
 }
 
 function App() {
-  const [notesWidth, setNotesWidth] = createSignal(30);
+  const [notesWidth, setNotesWidth] = createSignal(36);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
   const [showAnalytics, setShowAnalytics] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
@@ -536,17 +536,17 @@ function App() {
   const [dragStart, setDragStart] = createSignal<number | null>(null);
   const [dragNow, setDragNow] = createSignal<number | null>(null);
   const [isDraggingTimeline, setIsDraggingTimeline] = createSignal(false);
-  const [isResizingNotes, setIsResizingNotes] = createSignal(false);
+
 
   let timelineEl: HTMLDivElement | undefined;
   let roomPlaneEl: HTMLDivElement | undefined;
   let audioInputEl: HTMLInputElement | undefined;
   let referenceInputEl: HTMLInputElement | undefined;
   const [gridScale, setGridScale] = createSignal(1);
-  const BASE_ROOM_W = 560;
+  const BASE_ROOM_W = 420;
 
   const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : `${notesWidth()}%`));
-  const workspaceGrid = createMemo(() => `minmax(0, 1fr) 2px ${panelWidth()}`);
+  const workspaceGrid = createMemo(() => `minmax(0, 1fr) ${panelWidth()}`);
 
   const displayRange = createMemo(() => {
     const start = dragStart();
@@ -1301,28 +1301,7 @@ function App() {
     setDragNow(null);
   };
 
-  const onResizeDown = (event: PointerEvent) => {
-    if (notesCollapsed()) return;
-    event.preventDefault();
-    setIsResizingNotes(true);
-    window.addEventListener('pointermove', onResizeMove);
-    window.addEventListener('pointerup', onResizeUp, { once: true });
-  };
 
-  const onResizeMove = (event: PointerEvent) => {
-    const width = window.innerWidth;
-    const next = ((width - event.clientX) / width) * 100;
-    setNotesWidth(Math.max(24, Math.min(42, next)));
-  };
-
-  const onResizeUp = () => {
-    setIsResizingNotes(false);
-    window.removeEventListener('pointermove', onResizeMove);
-  };
-
-  onCleanup(() => {
-    window.removeEventListener('pointermove', onResizeMove);
-  });
 
   onMount(() => {
     if (!roomPlaneEl) return;
@@ -1349,58 +1328,56 @@ function App() {
   });
 
   return (
-    <ErrorBoundary fallback={(err) => (
-      <div style={{ padding: '20px', background: 'red', color: 'white', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
-        <h2>SolidJS Error Boundary Caught an Error!</h2>
-        <p>{err.toString()}</p>
-      </div>
-    )}>
-      <main class="review-app">
-        <div class="scaled-app">
-        <header class="topbar">
-          <div class="topbar-title">
-            <p class="eyebrow">Pik Pro Player</p>
-            <div class="title-row">
-              <div class="topbar-title-wrap">
-                <h1>{trackTitle()}</h1>
-              </div>
-              <div class="transport-bar">
-                <input
-                ref={audioInputEl}
-                class="transport-file-input"
-                type="file"
-                accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a,.mp4"
-                onChange={onAudioFileChange}
-              />
-              <button type="button" class="transport-btn is-load" onClick={onLoadAudioClick} aria-label="Load audio file">
-                Load
-              </button>
-              <button type="button" class="transport-btn is-stop" onClick={stopPlayback} aria-label="Stop">■</button>
-              <button
-                type="button"
-                class="transport-btn is-play"
-                classList={{ 'is-active': isPlaying() }}
-                onClick={togglePlay}
-                aria-label={isPlaying() ? 'Pause' : 'Play'}
-              >
-                {isPlaying() ? '❚❚' : '▶'}
-              </button>
-              <button
-                type="button"
-                class="transport-btn is-loop"
-                classList={{ 'is-active': loopEnabled() }}
-                onClick={toggleLoop}
-                aria-label="Loop"
-              >
-                🔁
-              </button>
-              <span class="transport-time">{formatTime(playheadTime())}</span>
-              <div class="topbar-meta">
-                <span>{activeVersion().title}</span>
-                <strong>{activeVersion().label} · {selectedRangeLabel()}</strong>
-              </div>
-              <span class="transport-status">{loadStatus()}</span>
+    <main class="review-app">
+      <div class="scaled-app">
+      <header class="topbar">
+        <div class="topbar-left">
+          <p class="eyebrow">Pik Pro Player</p>
+          <div class="title-row">
+            <div class="topbar-title-wrap">
+              <h1>{trackTitle()}</h1>
             </div>
+            <input
+              ref={audioInputEl}
+              class="transport-file-input"
+              type="file"
+              accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a,.mp4"
+              onChange={onAudioFileChange}
+            />
+            <button type="button" class="transport-btn is-load" onClick={onLoadAudioClick} aria-label="Load audio file">
+              Load
+            </button>
+          </div>
+        </div>
+
+        <div class="transport-bar">
+          <button type="button" class="transport-btn is-stop" onClick={stopPlayback} aria-label="Stop">■</button>
+          <button
+            type="button"
+            class="transport-btn is-play"
+            classList={{ 'is-active': isPlaying() }}
+            onClick={togglePlay}
+            aria-label={isPlaying() ? 'Pause' : 'Play'}
+          >
+            {isPlaying() ? '❚❚' : '▶'}
+          </button>
+          <button
+            type="button"
+            class="transport-btn is-loop"
+            classList={{ 'is-active': loopEnabled() }}
+            onClick={toggleLoop}
+            aria-label="Loop"
+          >
+            🔁
+          </button>
+          <span class="transport-time">{formatTime(playheadTime())}</span>
+        </div>
+
+        <div class="topbar-right">
+          <span class="transport-status">{loadStatus()}</span>
+          <div class="topbar-meta">
+            <span>{activeVersion().title}</span>
+            <strong>{activeVersion().label}</strong>
           </div>
         </div>
       </header>
@@ -1700,13 +1677,6 @@ function App() {
           </div>
         </section>
 
-        <button
-          type="button"
-          class="panel-resizer"
-          onPointerDown={onResizeDown}
-          aria-label="Notes panel divider"
-        />
-
         <aside class="notes-panel" classList={{ 'is-collapsed': notesCollapsed() }}>
           <button
             type="button"
@@ -1722,35 +1692,43 @@ function App() {
               <div class="notes-heading">
                 <div>
                   <span>Notes Panel</span>
-                  <strong>Time Range Notes</strong>
+                  <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+                    <strong>Time Range Notes</strong>
+                    <Show when={notes().length > 0}>
+                      <span class="note-count-badge">
+                        {notes().length}
+                      </span>
+                    </Show>
+                  </div>
                 </div>
                 <div class="notes-heading-meta">
-                  <small>{filteredSortedNotes().length} / {notes().length} notes</small>
-                  <button type="button" class="export-link" onClick={() => setShowAnalytics((v) => !v)}>
-                    {showAnalytics() ? 'Hide Analytics' : 'Show Analytics'}
-                  </button>
-                  <button type="button" class="export-link" onClick={exportNotesCsv}>Export CSV</button>
-                  <button type="button" class="export-link" onClick={exportNotesJson}>Export JSON</button>
-                  <button
-                    type="button"
-                    class="export-link"
-                    style={{ padding: "2px 6px" }}
-                    disabled={undoStack().length === 0}
-                    onClick={undo}
-                    title="Undo (⌘Z)"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3l-3 2.7"/></svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="export-link"
-                    style={{ padding: "2px 6px" }}
-                    disabled={redoStack().length === 0}
-                    onClick={redo}
-                    title="Redo (⌘⇧Z)"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
-                  </button>
+                  <div class="notes-heading-actions">
+                    <button type="button" class="ghost-btn" onClick={() => setShowAnalytics((v) => !v)}>
+                      {showAnalytics() ? 'Hide Analytics' : 'Analytics'}
+                    </button>
+                    <button type="button" class="ghost-btn" onClick={exportNotesCsv}>CSV</button>
+                    <button type="button" class="ghost-btn" onClick={exportNotesJson}>JSON</button>
+                  </div>
+                  <div class="notes-heading-actions" style={{ 'margin-left': 'auto' }}>
+                    <button
+                      type="button"
+                      class="ghost-btn"
+                      disabled={undoStack().length === 0}
+                      onClick={undo}
+                      title="Undo (⌘Z)"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3l-3 2.7"/></svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="ghost-btn"
+                      disabled={redoStack().length === 0}
+                      onClick={redo}
+                      title="Redo (⇧⌘Z)"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1911,7 +1889,6 @@ function App() {
               >
                 Add Range Note
               </button>
-              <p class="note-hint">Press <kbd>N</kbd> anytime to drop a note at the playhead.</p>
 
               <div class="note-filter-bar">
                 <input

@@ -58,8 +58,8 @@ button {
   min-height: 800px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  padding: 8px 16px 16px;
-  gap: 10px;
+  padding: 4px 16px 16px;
+  gap: 8px;
 }
 
 .topbar {
@@ -70,8 +70,20 @@ button {
   padding: 0 8px;
 }
 
-.topbar-title {
+.topbar-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
+  flex: 1;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .eyebrow,
@@ -92,6 +104,7 @@ button {
   align-items: center;
   gap: 12px;
   margin-top: 2px;
+  min-width: 0;
 }
 
 .topbar h1 {
@@ -104,9 +117,9 @@ button {
 }
 
 .topbar-title-wrap {
-  max-width: 320px;
   overflow: hidden;
   white-space: nowrap;
+  min-width: 0;
 }
 
 @keyframes marquee-pingpong {
@@ -914,7 +927,9 @@ button {
 .room-plane {
   position: relative;
   width: 100%;
-  height: min(100%, calc(380px / var(--ui-zoom)));
+  max-width: 480px;
+  margin: 0 auto;
+  height: min(100%, calc(380px / 1));
   align-self: center;
   min-height: 0;
   overflow: hidden;
@@ -969,18 +984,18 @@ button {
   position: absolute;
   top: 54px;
   bottom: 14px;
-  left: calc(50% - 280px);
-  width: 560px;
+  left: calc(50% - 210px);
+  width: 420px;
   display: grid;
-  grid-template-columns: 1.2fr 1fr 0.7fr 1fr 0.7fr 1fr 1.2fr;
+  grid-template-columns: 1fr 0.8fr 1.2fr 0.8fr 1fr;
   grid-template-rows: 1fr 2.6fr 1fr 1fr 1fr 6fr;
   grid-template-areas:
-    ".        left     .            center   .             right     ."
-    ".        .        .            lfe      .             .         ."
-    ".        .        leftTopFront .        rightTopFront .         ."
-    "leftSide .        .            listener .             .         rightSide"
-    ".        .        leftTopRear  .        rightTopRear  .         ."
-    ".        leftRear .            .        .             rightRear .";
+    "left     .            center   .             right"
+    ".        .            lfe      .             ."
+    ".        leftTopFront .        rightTopFront ."
+    "leftSide .            listener .             rightSide"
+    ".        leftTopRear  .        rightTopRear  ."
+    "leftRear .            .        .             rightRear";
   align-items: center;
   justify-items: center;
 }
@@ -1338,39 +1353,6 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-.panel-resizer {
-  width: 10px;
-  background: transparent;
-  cursor: col-resize;
-  position: relative;
-}
-
-.panel-resizer::before {
-  content: "";
-  position: absolute;
-  top: 18px;
-  bottom: 18px;
-  left: 4px;
-  width: 2px;
-  border-radius: 999px;
-  background: rgba(0, 167, 200, 0.22);
-}
-
-.panel-resizer:hover::before,
-.panel-resizer.is-dragging::before {
-  background: var(--cyan);
-  box-shadow: 0 0 16px rgba(0, 167, 200, 0.34);
-}
-
-.panel-resizer.is-disabled {
-  cursor: default;
-}
-
-.panel-resizer.is-disabled::before,
-.panel-resizer.is-disabled:hover::before {
-  background: rgba(0, 167, 200, 0.14);
-  box-shadow: none;
-}
 
 .notes-panel {
   position: relative;
@@ -2076,7 +2058,7 @@ button {
   }
 
   .room-wrap {
-    grid-template-columns: minmax(calc(400px / var(--ui-zoom)), 42%) minmax(0, 1fr);
+    grid-template-columns: minmax(calc(400px / 1), 42%) minmax(0, 1fr);
     padding: 20px;
   }
 }
@@ -2122,4 +2104,44 @@ button {
   background: var(--cyan-strong);
   opacity: 1;
   box-shadow: 0 0 4px var(--cyan-strong);
+}
+
+/* Ghost Buttons */
+.ghost-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 167, 200, 0.3);
+  color: var(--cyan-strong);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ghost-btn:hover:not(:disabled) {
+  background: rgba(0, 167, 200, 0.1);
+}
+.ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notes-heading-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.note-count-badge {
+  background: rgba(0, 167, 200, 0.1);
+  color: var(--cyan-strong);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-top: 1px;
+}
+.notes-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }

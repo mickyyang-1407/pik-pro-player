@@ -16,10 +16,10 @@
         "title": "Pik Pro Player",
         "width": 1500,
         "height": 940,
-        "minWidth": 1500,
-        "minHeight": 940,
+        "minWidth": 1100,
+        "minHeight": 700,
         "center": true,
-        "resizable": false
+        "resizable": true
       }
     ],
     "security": {
