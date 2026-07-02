@@ -19,51 +19,26 @@ import {
 import { LoudnessPanel } from './components/LoudnessPanel';
 import { TransportBar } from './components/TransportBar';
 import { Timeline } from './components/Timeline';
+import { NotesPanel } from './components/NotesPanel';
 import { formatTime } from './utils';
+import {
+  Note,
+  MixVersion,
+  ReferenceTrack,
+  mixVersions,
+  defaultReferenceTrack,
+} from './types';
 
 const BASE_W = 1500;
 const BASE_H = 940;
-
-type Note = {
-  id: number;
-  rangeStart: number;
-  rangeEnd: number;
-  body: string;
-  status: 'open' | 'checking' | 'done';
-  kind: 'point' | 'range';
-  severity: 'critical' | 'minor';
-};
 
 const MOCK_DURATION_SECONDS = 214;
 const PLAYHEAD_NUDGE_SECONDS = 1;
 const PLAYHEAD_SCRUB_SECONDS = 5;
 const zoomOptions = [75, 100, 125, 150];
 
-type MixVersion = {
-  id: 'a' | 'b';
-  label: string;
-  title: string;
-  note: string;
-  integratedLufs: number;
-  truePeak: number;
-  openIssues: number;
-  updatedAt: string;
-};
-
-type ReferenceTrack = {
-  name: string;
-  source: 'mock' | 'file';
-  integratedLufs: number;
-  truePeak: number;
-};
-
 type LoudnessPoint = {
   time: number;
-  value: number;
-};
-
-type SpectrumBand = {
-  label: string;
   value: number;
 };
 
@@ -102,36 +77,6 @@ const roundTo = (value: number, digits: number) => {
 
 type MeterChannel = { label: string; rms: number; peak: number };
 
-const mixVersions: MixVersion[] = [
-  {
-    id: 'a',
-    label: 'A',
-    title: 'Current Mix',
-    note: 'Wider chorus image, vocal edge still checking.',
-    integratedLufs: -14.2,
-    truePeak: -1.1,
-    openIssues: 2,
-    updatedAt: 'Today 18:10',
-  },
-  {
-    id: 'b',
-    label: 'B',
-    title: 'Revision 02',
-    note: 'Tighter low-mid and safer true peak headroom.',
-    integratedLufs: -15.4,
-    truePeak: -1.8,
-    openIssues: 1,
-    updatedAt: 'Today 19:35',
-  },
-];
-
-const defaultReferenceTrack: ReferenceTrack = {
-  name: 'Reference Track',
-  source: 'mock',
-  integratedLufs: -15.8,
-  truePeak: -1.4,
-};
-
 const currentLoudnessCurve: LoudnessPoint[] = [
   { time: 0, value: -22 },
   { time: 24, value: -18 },
@@ -152,18 +97,6 @@ const referenceLoudnessCurve: LoudnessPoint[] = [
   { time: 153, value: -15.7 },
   { time: 181, value: -14.1 },
   { time: 214, value: -16.9 },
-];
-
-const spectrumBands: SpectrumBand[] = [
-  { label: '40', value: 42 },
-  { label: '80', value: 58 },
-  { label: '160', value: 72 },
-  { label: '315', value: 64 },
-  { label: '630', value: 48 },
-  { label: '1.2k', value: 54 },
-  { label: '2.5k', value: 61 },
-  { label: '5k', value: 46 },
-  { label: '10k', value: 38 },
 ];
 
 const seedNotes: Note[] = [
@@ -1423,360 +1356,64 @@ function App() {
           />
         </section>
 
-        <aside class="notes-panel" classList={{ 'is-collapsed': notesCollapsed() }}>
-          <button
-            type="button"
-            class="collapse-button"
-            onClick={() => setNotesCollapsed((collapsed) => !collapsed)}
-            aria-label={notesCollapsed() ? 'Expand notes panel' : 'Collapse notes panel'}
-          >
-            {notesCollapsed() ? '◀' : '▶'}
-          </button>
-
-          {!notesCollapsed() && (
-            <div class="notes-content">
-              <div class="notes-heading">
-                <div>
-                  <span>Notes Panel</span>
-                  <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
-                    <strong>Time Range Notes</strong>
-                    <Show when={notes().length > 0}>
-                      <span class="note-count-badge">
-                        {notes().length}
-                      </span>
-                    </Show>
-                  </div>
-                </div>
-                <div class="notes-heading-meta">
-                  <div class="notes-heading-actions">
-                    <button type="button" class="ghost-btn" onClick={() => setShowAnalytics((v) => !v)}>
-                      {showAnalytics() ? 'Hide Analytics' : 'Analytics'}
-                    </button>
-                    <button type="button" class="ghost-btn" onClick={exportNotesCsv}>CSV</button>
-                    <button type="button" class="ghost-btn" onClick={exportNotesJson}>JSON</button>
-                  </div>
-                  <div class="notes-heading-actions" style={{ 'margin-left': 'auto' }}>
-                    <button
-                      type="button"
-                      class="ghost-btn"
-                      disabled={undoStack().length === 0}
-                      onClick={undo}
-                      title="Undo (⌘Z)"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3l-3 2.7"/></svg>
-                    </button>
-                    <button
-                      type="button"
-                      class="ghost-btn"
-                      disabled={redoStack().length === 0}
-                      onClick={redo}
-                      title="Redo (⇧⌘Z)"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {showAnalytics() && (
-                <>
-                  <div class="version-compare-card">
-                    <div class="version-compare-head">
-                      <div>
-                        <span>Version Compare</span>
-                        <strong>{activeVersion().title}</strong>
-                      </div>
-                      <div class="version-switcher" aria-label="Mix version switcher">
-                        <For each={mixVersions}>
-                          {(version) => (
-                            <button
-                              type="button"
-                              classList={{ 'is-active': activeVersionId() === version.id }}
-                              onClick={() => setActiveVersionId(version.id)}
-                              aria-pressed={activeVersionId() === version.id}
-                            >
-                              {version.label}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                    <p>{activeVersion().note}</p>
-                    <div class="version-metrics">
-                      <div>
-                        <span>LUFS</span>
-                        <strong>{activeVersion().integratedLufs}</strong>
-                        <small classList={{ 'is-better': versionDelta().lufs < 0, 'is-worse': versionDelta().lufs > 0 }}>
-                          {versionDelta().lufs >= 0 ? '+' : ''}{versionDelta().lufs.toFixed(1)} vs {compareVersion().label}
-                        </small>
-                      </div>
-                      <div>
-                        <span>True Peak</span>
-                        <strong>{activeVersion().truePeak}</strong>
-                        <small classList={{ 'is-better': versionDelta().truePeak < 0, 'is-worse': versionDelta().truePeak > 0 }}>
-                          {versionDelta().truePeak >= 0 ? '+' : ''}{versionDelta().truePeak.toFixed(1)} dB
-                        </small>
-                      </div>
-                      <div>
-                        <span>Open Issues</span>
-                        <strong>{activeVersion().openIssues}</strong>
-                        <small classList={{ 'is-better': versionDelta().issues < 0, 'is-worse': versionDelta().issues > 0 }}>
-                          {versionDelta().issues >= 0 ? '+' : ''}{versionDelta().issues}
-                        </small>
-                      </div>
-                    </div>
-                    <div class="version-foot">
-                      <span>Updated {activeVersion().updatedAt}</span>
-                      <span>Compare against {compareVersion().label}</span>
-                    </div>
-                  </div>
-
-                  <div class="reference-card">
-                    <div class="reference-head">
-                      <div>
-                        <span>Reference Track</span>
-                        <strong>{referenceTrack().name}</strong>
-                      </div>
-                      <div class="reference-actions">
-                        <input
-                          ref={referenceInputEl}
-                          class="reference-file-input"
-                          type="file"
-                          accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a"
-                          onChange={onReferenceFileChange}
-                        />
-                        <button type="button" onClick={() => referenceInputEl?.click()}>Load</button>
-                        <button type="button" onClick={() => setReferenceTrack(defaultReferenceTrack)}>Reset</button>
-                      </div>
-                    </div>
-                    <div class="reference-meta">
-                      <span>{referenceTrack().source === 'file' ? 'File selected' : 'Mock reference'}</span>
-                      <span>{referenceTrack().integratedLufs} LUFS</span>
-                      <span>{referenceTrack().truePeak} dBTP</span>
-                    </div>
-                    <svg class="reference-graph" viewBox="0 0 220 68" preserveAspectRatio="none" aria-label="Loudness over time graph">
-                      <line x1="0" y1="20" x2="220" y2="20" />
-                      <line x1="0" y1="44" x2="220" y2="44" />
-                      <polyline class="is-reference" points={referenceCurvePoints()} />
-                      <polyline class="is-current" points={currentCurvePoints()} />
-                      <line
-                        class="is-playhead"
-                        x1={(playheadTime() / playbackDuration()) * 220}
-                        x2={(playheadTime() / playbackDuration()) * 220}
-                        y1="4"
-                        y2="64"
-                      />
-                    </svg>
-                    <div class="reference-legend">
-                      <span><i class="is-current" />Active mix</span>
-                      <span><i class="is-reference" />Reference</span>
-                    </div>
-                  </div>
-
-                  <div class="phase-card">
-                    <div class="phase-head">
-                      <div>
-                        <span>Phase / Spectrum</span>
-                        <strong>Mix Integrity</strong>
-                      </div>
-                      <strong class="phase-score">{correlationValue().toFixed(2)}</strong>
-                    </div>
-                    <div class="phase-meter">
-                      <span>-1</span>
-                      <div>
-                        <i style={{ left: `${((correlationValue() + 1) / 2) * 100}%` }} />
-                      </div>
-                      <span>+1</span>
-                    </div>
-                    <div class="phase-meta">
-                      <span>Correlation</span>
-                      <strong>{phaseOffset()}° phase offset</strong>
-                    </div>
-                    <div class="spectrum-bars" aria-label="Spectrum analyzer preview">
-                      <For each={spectrumBands}>
-                        {(band) => (
-                          <div>
-                            <i style={{ height: `${activeVersionId() === 'b' ? Math.max(18, band.value - 6) : band.value}%` }} />
-                            <span>{band.label}</span>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div class="general-note-card">
-                <span>General Note</span>
-                <textarea
-                  value={generalNote()}
-                  onInput={(event) => { pushHistoryDebounced(); setGeneralNote(event.currentTarget.value); }}
-                  onKeyDown={(event) => {
-                    handleAutoListKeyDown(event);
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }
-                  }}
-                  placeholder="Overall mix impressions, loudness concerns, delivery reminders..."
-                />
-              </div>
-
-              <div class="locked-card">
-                <span>Current locked timecode</span>
-                <strong>{selectedRangeLabel()}</strong>
-              </div>
-
-              <button
-                type="button"
-                class="primary-action"
-                disabled={displayRange().end <= displayRange().start || selectedNoteId() !== null}
-                onClick={addRangeNoteDraft}
-              >
-                Add Range Note
-              </button>
-
-              <div class="note-filter-bar">
-                <input
-                  type="text"
-                  class="note-search-input"
-                  value={noteSearch()}
-                  onInput={(event) => setNoteSearch(event.currentTarget.value)}
-                  placeholder="Search notes..."
-                />
-                <select
-                  value={statusFilter()}
-                  onChange={(event) => setStatusFilter(event.currentTarget.value as 'all' | 'open' | 'checking' | 'done')}
-                >
-                  <option value="all">All Status</option>
-                  <option value="open">Open</option>
-                  <option value="checking">Checking</option>
-                  <option value="done">Done</option>
-                </select>
-                <select
-                  value={severityFilter()}
-                  onChange={(event) => setSeverityFilter(event.currentTarget.value as 'all' | 'critical' | 'minor')}
-                >
-                  <option value="all">All Severity</option>
-                  <option value="critical">Critical</option>
-                  <option value="minor">Minor</option>
-                </select>
-              </div>
-
-              <div class="note-list">
-                <For each={filteredSortedNotes()}>
-                  {(note) => (
-                    <article
-                      class="note-item"
-                      classList={{
-                        'is-point': note.kind === 'point',
-                        'is-selected': selectedNoteId() === note.id,
-                        'is-critical': note.severity === 'critical',
-                      }}
-                      data-note-id={note.id}
-                    >
-                      <div>
-                        <strong onClick={() => selectNote(note)}>
-                          {note.kind === 'point' ? formatTime(note.rangeStart) : `${formatTime(note.rangeStart)} - ${formatTime(note.rangeEnd)}`}
-                        </strong>
-                        <div class="note-item-actions">
-                          <button
-                            type="button"
-                            class="severity-pill"
-                            classList={{ 'is-critical': note.severity === 'critical' }}
-                            onClick={() => toggleSeverity(note.id)}
-                          >
-                            {note.severity === 'critical' ? 'Critical' : 'Minor'}
-                          </button>
-                          <button
-                            type="button"
-                            class="status-pill-toggle"
-                            classList={{ 'is-checking': note.status === 'checking', 'is-done': note.status === 'done' }}
-                            onClick={() => cycleStatus(note.id)}
-                            aria-label="Cycle note status"
-                          >
-                            {note.status}
-                          </button>
-                          <button
-                            type="button"
-                            class="note-delete"
-                            onClick={() => deleteNote(note.id)}
-                            aria-label="Delete note"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                      {editingNoteId() === note.id ? (
-                        <textarea
-                          class="note-item-editor"
-                          ref={(el) => {
-                            el.value = note.body;
-                            setTimeout(() => {
-                              el.focus();
-                              el.setSelectionRange(el.value.length, el.value.length);
-                            }, 10);
-                          }}
-                          onBlur={(event) => {
-                            updateNoteBody(note.id, event.currentTarget.value);
-                            setEditingNoteId(null);
-                          }}
-                          onKeyDown={(event) => {
-                            handleAutoListKeyDown(event);
-                            if (event.key === 'Enter' && !event.shiftKey) {
-                              event.preventDefault();
-                              updateNoteBody(note.id, event.currentTarget.value);
-                              setEditingNoteId(null);
-                            }
-                            if (event.key === 'Escape') {
-                              event.preventDefault();
-                              setEditingNoteId(null);
-                            }
-                          }}
-                          placeholder="Type your note..."
-                        />
-                      ) : (
-                        <p onClick={() => setEditingNoteId(note.id)}>{note.body || 'Click to add note text…'}</p>
-                      )}
-                    </article>
-                  )}
-                </For>
-              </div>
-
-              <div class="share-notes-card">
-                <span>Send Notes via Email</span>
-                <div class="share-notes-form" style="flex-direction: column;">
-                  <input
-                    type="email"
-                    class="share-email-input"
-                    placeholder="Your Email (Sender)"
-                    value={shareSender()}
-                    onInput={(e) => setShareSender(e.currentTarget.value)}
-                  />
-                  <div style="display: flex; gap: 8px;">
-                    <input
-                      type="email"
-                      class="share-email-input"
-                      placeholder="Engineer Email (Recipient)"
-                      value={shareRecipient()}
-                      onInput={(e) => setShareRecipient(e.currentTarget.value)}
-                    />
-                    <button 
-                      type="button" 
-                      class="primary-action" 
-                      onClick={handleShareNotes}
-                      disabled={isSharing() || !shareRecipient() || !shareSender()}
-                    >
-                      {isSharing() ? 'Sending...' : 'Send'}
-                    </button>
-                  </div>
-                </div>
-                {shareStatus() && <p class="share-status-message" classList={{ 'is-error': shareStatus().startsWith('Error') }}>{shareStatus()}</p>}
-              </div>
-
-            </div>
-          )}
-        </aside>
+        <NotesPanel
+          notesCollapsed={notesCollapsed}
+          setNotesCollapsed={setNotesCollapsed}
+          notes={notes}
+          showAnalytics={showAnalytics}
+          setShowAnalytics={setShowAnalytics}
+          exportNotesCsv={exportNotesCsv}
+          exportNotesJson={exportNotesJson}
+          undoStack={undoStack}
+          redoStack={redoStack}
+          undo={undo}
+          redo={redo}
+          activeVersion={activeVersion}
+          activeVersionId={activeVersionId}
+          setActiveVersionId={setActiveVersionId}
+          versionDelta={versionDelta}
+          compareVersion={compareVersion}
+          referenceInputRef={(el) => (referenceInputEl = el)}
+          onReferenceLoadClick={() => referenceInputEl?.click()}
+          referenceTrack={referenceTrack}
+          onReferenceFileChange={onReferenceFileChange}
+          setReferenceTrack={setReferenceTrack}
+          referenceCurvePoints={referenceCurvePoints}
+          currentCurvePoints={currentCurvePoints}
+          playheadTime={playheadTime}
+          playbackDuration={playbackDuration}
+          correlationValue={correlationValue}
+          phaseOffset={phaseOffset}
+          generalNote={generalNote}
+          setGeneralNote={setGeneralNote}
+          pushHistoryDebounced={pushHistoryDebounced}
+          handleAutoListKeyDown={handleAutoListKeyDown}
+          selectedRangeLabel={selectedRangeLabel}
+          displayRange={displayRange}
+          selectedNoteId={selectedNoteId}
+          addRangeNoteDraft={addRangeNoteDraft}
+          noteSearch={noteSearch}
+          setNoteSearch={setNoteSearch}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          severityFilter={severityFilter}
+          setSeverityFilter={setSeverityFilter}
+          filteredSortedNotes={filteredSortedNotes}
+          selectNote={selectNote}
+          toggleSeverity={toggleSeverity}
+          cycleStatus={cycleStatus}
+          deleteNote={deleteNote}
+          editingNoteId={editingNoteId}
+          setEditingNoteId={setEditingNoteId}
+          updateNoteBody={updateNoteBody}
+          shareSender={shareSender}
+          setShareSender={setShareSender}
+          shareRecipient={shareRecipient}
+          setShareRecipient={setShareRecipient}
+          isSharing={isSharing}
+          handleShareNotes={handleShareNotes}
+          shareStatus={shareStatus}
+        />
       </section>
       </div>
     </main>

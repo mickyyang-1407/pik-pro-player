@@ -53,5 +53,7 @@
 - [x] C1 SpeakerRoom — 完成，orchestrator 驗收 ✅ + AGY review PASS
 - [x] C2 LoudnessPanel — 完成，orchestrator 驗收 ✅ + AGY review 實質項目 (a)-(d) 全過。AGY 判 FAIL 的唯一 finding（share.ts 被偷改）經 orchestrator 查證是 AGY 自己在 C1 review 時改的（mtime 17:10:33 落在其 review 窗內，developer 兩輪 log 均未碰該檔），屬誤判，裁決推翻改判 PASS。share.ts 的 `: string` 註記無害保留。
 - [x] C3 TransportBar（整個 topbar header）— 完成，orchestrator 驗收 ✅ + AGY review PASS
-- [ ] C4 Timeline — OpenCode 執行中（tickets/C4-timeline.md）
-- [ ] C5 NotesPanel — 未開始
+- [x] C4 Timeline — 完成，orchestrator 驗收 ✅ + AGY review PASS
+- [x] C5 NotesPanel — 完成，orchestrator 驗收 ✅（uncontrolled textarea 坑實測過：打字 DOM node 不重建）+ AGY review PASS。（註：第一次派工 OpenCode session 靜默中斷什麼都沒做，重派後成功）
+
+**全部完成（2026-07-02）**：main.tsx 2173 → 1443 行；五支元件 SpeakerRoom/LoudnessPanel/TransportBar/Timeline/NotesPanel + speakerConfig/meteringConfig/types/utils 四支共用檔。整合驗證全過（五元件跨元件互動、5 themes、export、無 global scroll）。
