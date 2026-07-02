@@ -49,6 +49,11 @@ fn player_meter_json(player: State<'_, AtmosPlayer>) -> Option<String> {
 }
 
 #[tauri::command]
+fn player_set_channel_mutes(mask: u32, player: State<'_, AtmosPlayer>) -> Result<(), String> {
+    player.set_channel_mutes(mask)
+}
+
+#[tauri::command]
 fn player_stop(player: State<'_, AtmosPlayer>) -> Result<(), String> {
     player.stop()
 }
@@ -72,6 +77,7 @@ pub fn run() {
             player_position,
             player_is_playing,
             player_meter_json,
+            player_set_channel_mutes,
             player_stop
         ])
         .run(tauri::generate_context!())

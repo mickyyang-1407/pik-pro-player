@@ -32,6 +32,7 @@ typedef struct {
     float meterPeak[12];
     int meterChannels;
     unsigned int meterSequence;
+    unsigned int muteMask; // bit i = mute channel i (channel order matches meter labels)
 } EQContext;
 
 static void calculate_biquad_coeffs(EQBandContext *band, Float64 sampleRate) {
@@ -122,6 +123,19 @@ static void tap_ProcessCallback(MTAudioProcessingTapRef tap, CMItemCount numberF
         context->meterPeak[bufIdx] = peak;
     }
     context->meterSequence++;
+
+    // Channel mutes run after metering: PPM keeps showing source levels while muted channels go silent
+    if (context->muteMask) {
+        for (UInt32 bufIdx = 0; bufIdx < bufferListInOut->mNumberBuffers && bufIdx < 32; bufIdx++) {
+            if ((context->muteMask >> bufIdx) & 1u) {
+                float *muteData = (float *)bufferListInOut->mBuffers[bufIdx].mData;
+                UInt32 muteSamples = bufferListInOut->mBuffers[bufIdx].mDataByteSize / sizeof(float);
+                if (muteData && muteSamples > 0) {
+                    vDSP_vclr(muteData, 1, muteSamples);
+                }
+            }
+        }
+    }
 
     if (!context->enabled) return;
 
@@ -295,6 +309,18 @@ void atmos_set_eq(void* player_ptr, int enabled, float preamp, const char* bands
             }
         }
     }
+}
+
+void atmos_set_channel_mutes(void* player_ptr, unsigned int mute_mask) {
+    if (!player_ptr) return;
+    AVPlayer *player = (__bridge AVPlayer*)player_ptr;
+
+    NSValue *ctxVal = objc_getAssociatedObject(player, "eqContext");
+    if (!ctxVal) return;
+    EQContext *context = (EQContext *)[ctxVal pointerValue];
+    if (!context) return;
+
+    context->muteMask = mute_mask;
 }
 
 char* atmos_get_meter_json(void* player_ptr) {

@@ -17,6 +17,7 @@ extern "C" {
     fn atmos_get_duration(player: *mut std::ffi::c_void) -> f64;
     fn atmos_is_playing(player: *mut std::ffi::c_void) -> std::os::raw::c_int;
     fn atmos_get_meter_json(player: *mut std::ffi::c_void) -> *mut std::os::raw::c_char;
+    fn atmos_set_channel_mutes(player: *mut std::ffi::c_void, mute_mask: std::os::raw::c_uint);
     fn free_audio_devices_json(ptr: *mut std::os::raw::c_char);
 }
 
@@ -147,6 +148,10 @@ impl AtmosPlayer {
                 duration: unsafe { atmos_get_duration(ptr) },
             }
         })
+    }
+
+    pub fn set_channel_mutes(&self, mask: u32) -> Result<(), String> {
+        self.with_player(|ptr| unsafe { atmos_set_channel_mutes(ptr, mask) })
     }
 
     pub fn meter_json(&self) -> Option<String> {

@@ -88,6 +88,9 @@ const speakers: Speaker[] = [
   { label: 'Rtr', group: 'top',   area: 'rightTopRear' },
 ];
 
+// Backend buffer/meter channel order (matches atmos_wrapper.m labels12) — differs from `speakers` display order
+const channelOrder = ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'Lrs', 'Rrs', 'Ltf', 'Rtf', 'Ltr', 'Rtr'];
+
 const meterRows = [
   { label: 'L', value: 72 },
   { label: 'R', value: 69 },
@@ -105,6 +108,26 @@ const meterRows = [
 
 const loudnessTicks = ['-inf', '-54', '-45', '-36', '-16', '-9', '-6', '-3', '0'];
 const ppmTicks = ['-inf', '-54', '-45', '-36', '-27', '-24', '-18', '-9', '-6', '-1'];
+
+// dB values behind ppmTicks; ticks render evenly spaced, so dB→% is piecewise-linear between them
+const ppmTickDb = [-60, -54, -45, -36, -27, -24, -18, -9, -6, -1];
+
+const ppmPercentFromDb = (db: number) => {
+  const last = ppmTickDb.length - 1;
+  if (db <= ppmTickDb[0]) return 0;
+  if (db >= ppmTickDb[last]) return 100;
+  for (let i = 0; i < last; i++) {
+    if (db <= ppmTickDb[i + 1]) {
+      const t = (db - ppmTickDb[i]) / (ppmTickDb[i + 1] - ppmTickDb[i]);
+      return ((i + t) / last) * 100;
+    }
+  }
+  return 100;
+};
+
+const linearToDb = (value: number) => (value > 0 ? 20 * Math.log10(value) : -Infinity);
+
+type MeterChannel = { label: string; rms: number; peak: number };
 
 const loudnessPosition = (value: number) => `${Math.max(0, Math.min(100, ((value + 60) / 60) * 100))}%`;
 
@@ -366,6 +389,54 @@ function App() {
     if (parts.length === 0) return 'All';
     return `${parts.join('+')} ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}`;
   });
+  const channelMuteMask = createMemo(() => {
+    const selected = new Set<string>();
+    for (const speaker of speakers) {
+      if (activeSpeakers().has(speaker.label) || soloGroups().has(speaker.group)) selected.add(speaker.label);
+    }
+    if (selected.size === 0) return 0;
+    let mask = 0;
+    channelOrder.forEach((label, index) => {
+      const shouldMute = speakerMode() === 'solo' ? !selected.has(label) : selected.has(label);
+      if (shouldMute) mask |= 1 << index;
+    });
+    return mask;
+  });
+
+  createEffect(() => {
+    const mask = channelMuteMask();
+    if (!isTauriRuntime() || !hasLoadedAudio()) return;
+    void invoke('player_set_channel_mutes', { mask }).catch(() => {});
+  });
+
+  const [liveMeter, setLiveMeter] = createSignal<MeterChannel[] | null>(null);
+
+  // Poll real vDSP meter data while a file is loaded; mock rows remain until the first real frame arrives
+  createEffect(() => {
+    if (!isTauriRuntime() || !hasLoadedAudio() || !ppmEnabled()) return;
+    const timer = setInterval(async () => {
+      try {
+        const json = await invoke<string | null>('player_meter_json');
+        if (!json) return;
+        const parsed = JSON.parse(json) as { available?: boolean; channels?: MeterChannel[] };
+        if (parsed.available && Array.isArray(parsed.channels)) setLiveMeter(parsed.channels);
+      } catch {
+        // player may be mid-reload; skip this frame
+      }
+    }, 100);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  const displayMeterRows = createMemo(() => {
+    const live = liveMeter();
+    if (!live) return meterRows;
+    const byLabel = new Map(live.map((channel) => [channel.label, channel]));
+    return channelOrder.map((label) => {
+      const channel = byLabel.get(label);
+      return { label, value: channel ? ppmPercentFromDb(linearToDb(channel.peak)) : 0 };
+    });
+  });
+
   const [lufsEnabled, setLufsEnabled] = createSignal(true);
   const [targetPlatformId, setTargetPlatformId] = createSignal(targetPlatforms[0].id);
   const targetPlatform = createMemo(() => targetPlatforms.find((p) => p.id === targetPlatformId()) ?? targetPlatforms[0]);
@@ -506,6 +577,7 @@ function App() {
       setPlayheadTime(position.position);
       setIsPlaying(false);
       setLoadStatus('Loaded through AVFoundation');
+      void invoke('player_set_channel_mutes', { mask: channelMuteMask() }).catch(() => {});
     } catch (error) {
       setHasLoadedAudio(false);
       setLoadStatus(`Load failed: ${String(error)}`);
@@ -783,6 +855,7 @@ function App() {
         }));
       }
         
+      setDragStart(origin);
       setDragNow(time);
       setIsDraggingTimeline(true);
       timelineEl?.setPointerCapture(event.pointerId);
@@ -1032,7 +1105,7 @@ function App() {
                     </div>
                   </div>
                   <div class="ppm-meters">
-                    <For each={meterRows}>
+                    <For each={displayMeterRows()}>
                       {(meter) => (
                         <div class="ppm-channel">
                           <span>{meter.label}</span>
