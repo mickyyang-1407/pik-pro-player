@@ -20,6 +20,11 @@ extern "C" {
     fn atmos_is_playing(player: *mut std::ffi::c_void) -> std::os::raw::c_int;
     fn atmos_get_meter_json(player: *mut std::ffi::c_void) -> *mut std::os::raw::c_char;
     fn atmos_set_channel_mutes(player: *mut std::ffi::c_void, mute_mask: std::os::raw::c_uint);
+    fn atmos_generate_waveform(
+        path: *const std::os::raw::c_char,
+        out: *mut f32,
+        num_bins: std::os::raw::c_uint,
+    ) -> std::os::raw::c_int;
     fn free_audio_devices_json(ptr: *mut std::os::raw::c_char);
 }
 
@@ -251,4 +256,20 @@ impl AtmosPlayer {
         action(ptr as *mut std::ffi::c_void);
         Ok(())
     }
+}
+
+/// Offline waveform overview — reads the file with AVAssetReader and produces
+/// `num_bins` peak values in [0.0, 1.0]. Runs on the caller's thread and can be slow
+/// for long files; call from a spawn_blocking / std::thread::spawn context.
+pub fn generate_waveform(path: &str, num_bins: usize) -> Result<Vec<f32>, String> {
+    if num_bins == 0 {
+        return Err("num_bins must be > 0".into());
+    }
+    let c_path = CString::new(path).map_err(|e| e.to_string())?;
+    let mut buf = vec![0.0f32; num_bins];
+    let rc = unsafe { atmos_generate_waveform(c_path.as_ptr(), buf.as_mut_ptr(), num_bins as u32) };
+    if rc != 0 {
+        return Err("waveform generation failed".into());
+    }
+    Ok(buf)
 }

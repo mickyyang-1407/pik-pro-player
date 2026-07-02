@@ -1,4 +1,4 @@
-import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -337,6 +337,7 @@ function App() {
   const [trackDuration, setTrackDuration] = createSignal(MOCK_DURATION_SECONDS);
   const [hasLoadedAudio, setHasLoadedAudio] = createSignal(false);
   const [loadStatus, setLoadStatus] = createSignal('Mock clock ready');
+  const [loadedFilePath, setLoadedFilePath] = createSignal<string | null>(null);
   const playbackDuration = createMemo(() => Math.max(0.1, trackDuration()));
   const activeVersion = createMemo(() => mixVersions.find((version) => version.id === activeVersionId()) ?? mixVersions[0]);
   const compareVersion = createMemo(() => mixVersions.find((version) => version.id !== activeVersionId()) ?? mixVersions[1]);
@@ -648,14 +649,18 @@ function App() {
     try {
       const position = await invoke<PositionPayload>('player_load', { path });
       setHasLoadedAudio(true);
+      setLoadedFilePath(path);
       setTrackTitle(fileTitleFromPath(path));
       setTrackDuration(position.duration > 0 ? position.duration : MOCK_DURATION_SECONDS);
       setPlayheadTime(position.position);
       setIsPlaying(false);
       setLoadStatus('Loaded through AVFoundation');
       void invoke('player_set_channel_mutes', { mask: channelMuteMask() }).catch(() => {});
+      void loadNotesForFile(path);
+      void loadWaveformForFile(path);
     } catch (error) {
       setHasLoadedAudio(false);
+      setLoadedFilePath(null);
       setLoadStatus(`Load failed: ${String(error)}`);
     }
   };
@@ -688,11 +693,259 @@ function App() {
     input.value = '';
   };
 
+  // ── Undo/Redo for notes + general note (coarse-grained snapshots, max 10) ──
+  type NotesSnapshot = { notes: Note[]; generalNote: string };
+  const [undoStack, setUndoStack] = createSignal<NotesSnapshot[]>([]);
+  const [redoStack, setRedoStack] = createSignal<NotesSnapshot[]>([]);
+  const UNDO_LIMIT = 10;
+
+  const cloneSnapshot = (): NotesSnapshot => ({
+    notes: notes().map((n) => ({ ...n })),
+    generalNote: generalNote(),
+  });  let suppressHistory = false;
+  const pushHistory = () => {
+    if (suppressHistory) return;
+    const snap = cloneSnapshot();
+    setUndoStack((s) => {
+      const next = [...s, snap];
+      if (next.length > UNDO_LIMIT) next.shift();
+      return next;
+    });
+    setRedoStack([]);
+  };
+
+  // Debounce so a burst of keystrokes only produces one history entry.
+  let historyDebounce: ReturnType<typeof setTimeout> | null = null;
+  const pushHistoryDebounced = () => {
+    if (historyDebounce) clearTimeout(historyDebounce);
+    historyDebounce = setTimeout(() => {
+      historyDebounce = null;
+      pushHistory();
+    }, 500);
+  };
+
+  // Apply a snapshot to the current signals AND re-persist to DB (delete removed rows, upsert kept ones).
+  const applySnapshot = async (target: NotesSnapshot) => {
+    const path = loadedFilePath();
+    const before = cloneSnapshot();
+    suppressHistory = true;
+    try {
+      setNotes(target.notes.map((n) => ({ ...n })));
+      setGeneralNote(target.generalNote);
+
+      if (!path || !isTauriRuntime()) return;
+
+      // Sync DB: delete rows removed from target, upsert rows in target.
+      const beforeIds = new Set(before.notes.map((n) => n.id));
+      const targetIds = new Set(target.notes.map((n) => n.id));
+      for (const id of beforeIds) {
+        if (!targetIds.has(id) && persistedNoteIds.has(id)) {
+          persistedNoteIds.delete(id);
+          await invoke('notes_delete', { id }).catch(() => {});
+        }
+      }
+      for (const n of target.notes) {
+        if (persistedNoteIds.has(n.id)) {
+          await invoke('notes_update', { id: n.id, note: noteToInput(n) }).catch(() => {});
+        } else {
+          const created = await invoke<NoteRecordDto>('notes_add', { path, note: noteToInput(n) }).catch(() => null);
+          if (created) {
+            const dbNote = dtoToNote(created);
+            setNotes((current) => current.map((x) => (x.id === n.id ? dbNote : x)));
+            persistedNoteIds.add(dbNote.id);
+          }
+        }
+      }
+      await invoke('notes_set_general', { path, general: target.generalNote }).catch(() => {});
+    } finally {
+      suppressHistory = false;
+    }
+  };
+
+  const undo = () => {
+    const stack = undoStack();
+    if (stack.length === 0) return;
+    const prev = stack[stack.length - 1];
+    setUndoStack(stack.slice(0, -1));
+    setRedoStack((r) => [...r, cloneSnapshot()]);
+    void applySnapshot(prev);
+  };
+
+  const redo = () => {
+    const stack = redoStack();
+    if (stack.length === 0) return;
+    const next = stack[stack.length - 1];
+    setRedoStack(stack.slice(0, -1));
+    setUndoStack((u) => {
+      const nu = [...u, cloneSnapshot()];
+      if (nu.length > UNDO_LIMIT) nu.shift();
+      return nu;
+    });
+    void applySnapshot(next);
+  };
+
   const startEditingNote = (note: Note) => {
+    pushHistory();
     setNotes((current) => [note, ...current]);
     setEditingNoteId(note.id);
     setSelectedNoteId(note.id);
   };
+
+
+  // ── E5: SQLite notes persistence ──────────────────────────────────────────
+  type NoteRecordDto = {
+    id: number;
+    filePath: string;
+    rangeStart: number;
+    rangeEnd: number;
+    body: string;
+    status: 'open' | 'checking' | 'done';
+    kind: 'point' | 'range';
+    severity: 'critical' | 'minor';
+    createdAt: string;
+    updatedAt: string;
+  };
+  type FileNotesPayloadDto = {
+    generalNote: string;
+    notes: NoteRecordDto[];
+  };
+
+  const dtoToNote = (r: NoteRecordDto): Note => ({
+    id: r.id,
+    rangeStart: r.rangeStart,
+    rangeEnd: r.rangeEnd,
+    body: r.body,
+    status: r.status,
+    kind: r.kind,
+    severity: r.severity,
+  });
+
+  const noteToInput = (note: Note) => ({
+    rangeStart: note.rangeStart,
+    rangeEnd: note.rangeEnd,
+    body: note.body,
+    status: note.status,
+    kind: note.kind,
+    severity: note.severity,
+  });
+
+  // Map front-end temp ids -> DB row ids (both stored in `Note.id` after resolution).
+  // A note that's been persisted has id > 0 and matches the DB row id.
+  // Draft/unsaved notes keep the local counter id from nextNoteId().
+  const persistedNoteIds = new Set<number>();
+
+  const loadNotesForFile = async (path: string) => {
+    if (!isTauriRuntime()) return;
+    try {
+      const payload = await invoke<FileNotesPayloadDto>('notes_get_for_file', { path });
+      const loaded = payload.notes.map(dtoToNote);
+      persistedNoteIds.clear();
+      loaded.forEach((n) => persistedNoteIds.add(n.id));
+      setNotes(loaded);
+      setGeneralNote(payload.generalNote ?? '');
+      setEditingNoteId(null);
+      setSelectedNoteId(null);
+      void invoke('notes_touch_file', { path }).catch(() => {});
+    } catch {
+      // fresh DB or transient failure — keep the current in-memory notes
+    }
+  };
+
+  // ── E6: Waveform overview ─────────────────────────────────────────────────
+  const [waveformPeaks, setWaveformPeaks] = createSignal<number[] | null>(null);
+  const WAVEFORM_BINS = 800; // ~1 bin per 3-4 px on a 1200-1500 px timeline
+
+  const loadWaveformForFile = async (path: string) => {
+    if (!isTauriRuntime()) return;
+    setWaveformPeaks(null);
+    try {
+      const peaks = await invoke<number[]>('player_waveform', { path, numBins: WAVEFORM_BINS });
+      if (peaks && peaks.length > 0) setWaveformPeaks(peaks);
+    } catch {
+      // waveform is decorative; ignore failure
+    }
+  };
+
+  const waveformPath = createMemo(() => {
+    const peaks = waveformPeaks();
+    if (!peaks || peaks.length === 0) return '';
+    // Build a symmetric peak envelope (mirrored top/bottom) around y=50 in a 100-high viewBox.
+    const top: string[] = [];
+    const bottom: string[] = [];
+    for (let i = 0; i < peaks.length; i++) {
+      const h = Math.max(0, Math.min(1, peaks[i])) * 48; // leave 2px headroom top/bottom
+      top.push(`${i} ${50 - h}`);
+      bottom.push(`${i} ${50 + h}`);
+    }
+    // Path: M topLeft L top... L bottomLast L bottom... Z
+    return `M ${top[0]} L ${top.slice(1).join(' L ')} L ${bottom[bottom.length - 1]} L ${bottom.slice(0, -1).reverse().join(' L ')} Z`;
+  });
+
+  // Persist a note when the user finishes editing (body change committed or status/severity/kind toggled).
+  // Draft notes have negative-space ids from nextNoteId(); on first save the local id is replaced by the DB id.
+  const persistNote = async (note: Note): Promise<Note> => {
+    const path = loadedFilePath();
+    if (!path || !isTauriRuntime()) return note;
+    try {
+      if (persistedNoteIds.has(note.id)) {
+        await invoke('notes_update', { id: note.id, note: noteToInput(note) });
+        return note;
+      }
+      const created = await invoke<NoteRecordDto>('notes_add', { path, note: noteToInput(note) });
+      const dbNote = dtoToNote(created);
+      // Replace the transient id with the DB id in the notes signal.
+      setNotes((current) => current.map((n) => (n.id === note.id ? dbNote : n)));
+      setEditingNoteId((current) => (current === note.id ? dbNote.id : current));
+      setSelectedNoteId((current) => (current === note.id ? dbNote.id : current));
+      setLastPointNoteId((current) => (current === note.id ? dbNote.id : current));
+      persistedNoteIds.add(dbNote.id);
+      return dbNote;
+    } catch {
+      return note;
+    }
+  };
+
+  const persistNoteById = (id: number) => {
+    const n = notes().find((x) => x.id === id);
+    if (n) void persistNote(n);
+  };
+
+  // Debounced version for high-frequency mutations (body typing).
+  const bodyPersistTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  const persistNoteByIdDebounced = (id: number) => {
+    const existing = bodyPersistTimers.get(id);
+    if (existing) clearTimeout(existing);
+    const t = setTimeout(() => {
+      bodyPersistTimers.delete(id);
+      persistNoteById(id);
+    }, 350);
+    bodyPersistTimers.set(id, t);
+  };
+
+  const persistDeleteNote = (id: number) => {
+    if (!isTauriRuntime()) return;
+    // Cancel any pending debounced write for this note.
+    const existing = bodyPersistTimers.get(id);
+    if (existing) {
+      clearTimeout(existing);
+      bodyPersistTimers.delete(id);
+    }
+    if (!persistedNoteIds.has(id)) return;
+    persistedNoteIds.delete(id);
+    void invoke('notes_delete', { id }).catch(() => {});
+  };
+
+  // Debounced general-note auto-save.
+  let generalNoteTimer: ReturnType<typeof setTimeout> | null = null;
+  createEffect(() => {
+    const text = generalNote();
+    const path = loadedFilePath();
+    if (!path || !isTauriRuntime()) return;
+    if (generalNoteTimer) clearTimeout(generalNoteTimer);
+    generalNoteTimer = setTimeout(() => {
+      void invoke('notes_set_general', { path, general: text }).catch(() => {});
+    }, 400);
+  });
 
   const addPointNoteAtPlayhead = () => {
     const time = playheadTime();
@@ -751,19 +1004,26 @@ function App() {
   };
 
   const updateNoteBody = (id: number, body: string) => {
+    pushHistoryDebounced();
     setNotes((current) => current.map((note) => (note.id === id ? { ...note, body } : note)));
+    persistNoteByIdDebounced(id);
   };
 
   const toggleSeverity = (id: number) => {
+    pushHistory();
     setNotes((current) => current.map((note) => (note.id === id ? { ...note, severity: note.severity === 'critical' ? 'minor' : 'critical' } : note)));
+    persistNoteById(id);
   };
 
   const nextStatus: Record<Note['status'], Note['status']> = { open: 'checking', checking: 'done', done: 'open' };
   const cycleStatus = (id: number) => {
+    pushHistory();
     setNotes((current) => current.map((note) => (note.id === id ? { ...note, status: nextStatus[note.status] } : note)));
+    persistNoteById(id);
   };
 
   const deleteNote = (id: number) => {
+    pushHistory();
     setNotes((current) => current.filter((note) => note.id !== id));
     setEditingNoteId((current) => (current === id ? null : current));
     setSelectedNoteId((current) => {
@@ -773,6 +1033,7 @@ function App() {
       }
       return current;
     });
+    persistDeleteNote(id);
   };
 
   const selectNote = (note: Note) => {
@@ -792,6 +1053,61 @@ function App() {
     });
     const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
     downloadTextFile(`${safeFileName(trackTitle())}-notes.csv`, csv, 'text/csv;charset=utf-8');
+  };
+
+  // Structured JSON export — designed for downstream Google Apps Script / email delivery.
+  // Contains file metadata, loudness measurements, general note, and every timeline note.
+  const exportNotesJson = () => {
+    const live = liveLufs();
+    const platform = targetPlatform();
+    const payload = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      file: {
+        title: trackTitle(),
+        path: loadedFilePath() ?? null,
+        durationSec: trackDuration(),
+      },
+      loudness: {
+        integratedLufs: live?.integrated ?? null,
+        shortTermLufs: live?.short_term ?? null,
+        shortTermMax: live?.short_term_max ?? null,
+        momentaryMax: live?.momentary_max ?? null,
+        loudnessRange: live?.loudness_range ?? null,
+        truePeakDb: live?.true_peak_db ?? null,
+        truePeakPerChannel: live?.true_peak_per_channel ?? [],
+        sampleRate: live?.sample_rate ?? null,
+        channels: live?.channels ?? null,
+      },
+      target: {
+        id: platform.id,
+        label: platform.label,
+        targetLufs: platform.target,
+        tolerance: platform.tolerance ?? 1,
+        maxTruePeakDb: platform.truePeak,
+        status: {
+          lufs: lufsStatus(),
+          truePeak: truePeakStatus(),
+        },
+      },
+      generalNote: generalNote(),
+      notes: sortedNotes().map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        severity: n.severity,
+        status: n.status,
+        rangeStartSec: n.rangeStart,
+        rangeEndSec: n.rangeEnd,
+        rangeStartTimecode: formatTime(n.rangeStart),
+        rangeEndTimecode: formatTime(n.rangeEnd),
+        body: n.body,
+      })),
+    };
+    downloadTextFile(
+      `${safeFileName(trackTitle())}-notes.json`,
+      JSON.stringify(payload, null, 2),
+      'application/json;charset=utf-8',
+    );
   };
 
   const exportComplianceReport = () => {
@@ -860,6 +1176,14 @@ function App() {
     }
 
     const onGlobalKeyDown = (event: KeyboardEvent) => {
+      // Cmd/Ctrl-Z / Cmd/Ctrl-Shift-Z for undo/redo — allow even when typing in the general-note textarea
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && (event.key === 'z' || event.key === 'Z')) {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
       if (isTypingTarget(event.target)) return;
       if (event.key.toLowerCase() === 'n') {
         event.preventDefault();
@@ -923,12 +1247,14 @@ function App() {
 
       const id = lastPointNoteId();
       if (id !== null) {
+        pushHistory();
         setNotes((current) => current.map((note) => {
           if (note.id === id && note.kind === 'point' && note.rangeStart === origin) {
             return { ...note, kind: 'range', rangeStart: newStart, rangeEnd: newEnd };
           }
           return note;
         }));
+        persistNoteById(id);
       }
         
       setDragStart(origin);
@@ -1309,6 +1635,7 @@ function App() {
               onPointerUp={onTimelineUp}
               onPointerCancel={onTimelineUp}
             >
+              {/* waveform bg temporarily disabled while debugging blank screen */}
               <For each={filteredSortedNotes()}>
                 {(note) => (
                   <div
@@ -1391,6 +1718,25 @@ function App() {
                     {showAnalytics() ? 'Hide Analytics' : 'Show Analytics'}
                   </button>
                   <button type="button" class="export-link" onClick={exportNotesCsv}>Export CSV</button>
+                  <button type="button" class="export-link" onClick={exportNotesJson}>Export JSON</button>
+                  <button
+                    type="button"
+                    class="export-link"
+                    disabled={undoStack().length === 0}
+                    onClick={undo}
+                    title="Undo (⌘Z)"
+                  >
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    class="export-link"
+                    disabled={redoStack().length === 0}
+                    onClick={redo}
+                    title="Redo (⌘⇧Z)"
+                  >
+                    Redo
+                  </button>
                 </div>
               </div>
 
@@ -1526,7 +1872,7 @@ function App() {
                 <span>General Note</span>
                 <textarea
                   value={generalNote()}
-                  onInput={(event) => setGeneralNote(event.currentTarget.value)}
+                  onInput={(event) => { pushHistoryDebounced(); setGeneralNote(event.currentTarget.value); }}
                   onKeyDown={(event) => {
                     handleAutoListKeyDown(event);
                     if (event.key === 'Enter' && !event.shiftKey) {

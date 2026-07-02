@@ -449,6 +449,113 @@ void atmos_reset_lufs_ring(void* player_ptr) {
     atomic_store_explicit(&ring->tail, head, memory_order_release);
 }
 
+// Generate a downsampled waveform overview for an audio file at `path`.
+// Reads the file with AVAssetReader (offline, not through the player), sums all channels
+// into a mono signal, and emits `num_bins` peak values in the [0.0, 1.0] range.
+// Returns 0 on success; on failure returns 1 and leaves out[] zeroed.
+int atmos_generate_waveform(const char* path, float* out, unsigned int num_bins) {
+    if (!path || !out || num_bins == 0) return 1;
+    memset(out, 0, sizeof(float) * num_bins);
+
+    @autoreleasepool {
+        NSString *urlStr = [NSString stringWithUTF8String:path];
+        NSURL *url = [NSURL fileURLWithPath:urlStr];
+        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
+        NSArray<AVAssetTrack *> *tracks = [asset tracksWithMediaType:AVMediaTypeAudio];
+        if (tracks.count == 0) return 1;
+
+        AVAssetTrack *track = tracks.firstObject;
+        double duration = CMTimeGetSeconds(asset.duration);
+        if (duration <= 0.0) return 1;
+
+        NSError *err = nil;
+        AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&err];
+        if (err || !reader) return 1;
+
+        NSDictionary *settings = @{
+            AVFormatIDKey: @(kAudioFormatLinearPCM),
+            AVLinearPCMBitDepthKey: @32,
+            AVLinearPCMIsFloatKey: @YES,
+            AVLinearPCMIsNonInterleaved: @NO, // interleaved for simplicity
+            AVLinearPCMIsBigEndianKey: @NO,
+        };
+        AVAssetReaderTrackOutput *output = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:settings];
+        output.alwaysCopiesSampleData = NO;
+        if (![reader canAddOutput:output]) return 1;
+        [reader addOutput:output];
+
+        if (![reader startReading]) return 1;
+
+        // Estimate total frames from duration * (probably 48000) to size bins.
+        double estRate = 48000.0;
+        NSArray *descs = track.formatDescriptions;
+        if (descs.count > 0) {
+            CMAudioFormatDescriptionRef fmt = (__bridge CMAudioFormatDescriptionRef)descs[0];
+            const AudioStreamBasicDescription *asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt);
+            if (asbd && asbd->mSampleRate > 0) estRate = asbd->mSampleRate;
+        }
+        double totalFrames = duration * estRate;
+        double framesPerBin = totalFrames / (double)num_bins;
+        if (framesPerBin < 1.0) framesPerBin = 1.0;
+
+        unsigned int currentBin = 0;
+        double frameCursor = 0.0;      // frame index within the file
+        double binBoundary = framesPerBin;
+        float currentPeak = 0.0f;
+
+        CMSampleBufferRef sbuf = NULL;
+        while ((sbuf = [output copyNextSampleBuffer])) {
+            CMBlockBufferRef bbuf = CMSampleBufferGetDataBuffer(sbuf);
+            if (!bbuf) { CFRelease(sbuf); continue; }
+
+            size_t totalBytes = 0;
+            char *rawData = NULL;
+            OSStatus s = CMBlockBufferGetDataPointer(bbuf, 0, NULL, &totalBytes, &rawData);
+            if (s != kCMBlockBufferNoErr || !rawData) { CFRelease(sbuf); continue; }
+
+            // Interleaved float32; find channel count from the sample buffer format
+            unsigned int channels = 1;
+            CMFormatDescriptionRef fdesc = CMSampleBufferGetFormatDescription(sbuf);
+            if (fdesc) {
+                const AudioStreamBasicDescription *asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fdesc);
+                if (asbd) channels = asbd->mChannelsPerFrame > 0 ? asbd->mChannelsPerFrame : 1;
+            }
+            unsigned int frameCount = (unsigned int)(totalBytes / sizeof(float) / channels);
+            const float *samples = (const float *)rawData;
+
+            for (unsigned int f = 0; f < frameCount; f++) {
+                // Sum all channels (any signed) then take abs — this is a mono peak envelope.
+                float mono = 0.0f;
+                for (unsigned int c = 0; c < channels; c++) {
+                    float v = samples[f * channels + c];
+                    if (v < 0) v = -v;
+                    if (v > mono) mono = v;
+                }
+                if (mono > currentPeak) currentPeak = mono;
+                frameCursor += 1.0;
+                if (frameCursor >= binBoundary) {
+                    if (currentBin < num_bins) {
+                        out[currentBin] = currentPeak > 1.0f ? 1.0f : currentPeak;
+                        currentBin++;
+                    }
+                    currentPeak = 0.0f;
+                    binBoundary += framesPerBin;
+                    if (currentBin >= num_bins) break;
+                }
+            }
+            CFRelease(sbuf);
+            if (currentBin >= num_bins) break;
+        }
+        // Flush final partial bin
+        if (currentBin < num_bins) {
+            out[currentBin] = currentPeak > 1.0f ? 1.0f : currentPeak;
+        }
+        [reader cancelReading];
+    }
+    return 0;
+}
+
+
 char* atmos_get_meter_json(void* player_ptr) {
     if (!player_ptr) return strdup("{\"available\":false,\"channels\":[]}");
     AVPlayer *player = (__bridge AVPlayer*)player_ptr;
