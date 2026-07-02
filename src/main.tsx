@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { ErrorBoundary, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -296,6 +296,8 @@ function loudnessPolyline(points: LoudnessPoint[], valueOffset = 0) {
       return `${x.toFixed(1)},${(64 - y).toFixed(1)}`;
     })
     .join(' ');
+}
+
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
@@ -1347,17 +1349,23 @@ function App() {
   });
 
   return (
-    <main class="review-app">
-      <div class="scaled-app">
-      <header class="topbar">
-        <div class="topbar-title">
-          <p class="eyebrow">Pik Pro Player</p>
-          <div class="title-row">
-            <div class="topbar-title-wrap">
-              <h1>{trackTitle()}</h1>
-            </div>
-            <div class="transport-bar">
-              <input
+    <ErrorBoundary fallback={(err) => (
+      <div style={{ padding: '20px', background: 'red', color: 'white', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+        <h2>SolidJS Error Boundary Caught an Error!</h2>
+        <p>{err.toString()}</p>
+      </div>
+    )}>
+      <main class="review-app">
+        <div class="scaled-app">
+        <header class="topbar">
+          <div class="topbar-title">
+            <p class="eyebrow">Pik Pro Player</p>
+            <div class="title-row">
+              <div class="topbar-title-wrap">
+                <h1>{trackTitle()}</h1>
+              </div>
+              <div class="transport-bar">
+                <input
                 ref={audioInputEl}
                 class="transport-file-input"
                 type="file"
@@ -2019,6 +2027,20 @@ function App() {
     </main>
   );
 }
+
+window.addEventListener('error', (e) => {
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;top:0;left:0;z-index:9999;background:red;color:white;padding:20px;font-size:16px;overflow:auto;max-height:100vh;width:100vw;';
+  errDiv.innerHTML = `<strong>Error:</strong> ${e.message}<br/><pre>${e.error?.stack}</pre>`;
+  document.body.appendChild(errDiv);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;top:0;left:0;z-index:9999;background:orange;color:white;padding:20px;font-size:16px;overflow:auto;max-height:100vh;width:100vw;';
+  errDiv.innerHTML = `<strong>Unhandled Promise Rejection:</strong> ${e.reason}`;
+  document.body.appendChild(errDiv);
+});
 
 const root = document.getElementById('root');
 
