@@ -1395,8 +1395,6 @@ function App() {
             </div>
           </div>
         </div>
-
-        </div>
       </header>
 
       <section class="workspace" style={{ 'grid-template-columns': workspaceGrid() }}>
