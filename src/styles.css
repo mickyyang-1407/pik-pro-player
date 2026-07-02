@@ -205,7 +205,7 @@ button {
   display: grid;
   place-items: center;
   background: var(--surface-soft);
-  color: #5a6b78;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
@@ -1007,7 +1007,7 @@ button {
     linear-gradient(180deg, rgba(0, 167, 200, 0.05), transparent 42%),
     repeating-linear-gradient(90deg, transparent 0 42px, rgba(0, 167, 200, 0.055) 43px 44px),
     repeating-linear-gradient(0deg, transparent 0 42px, rgba(0, 167, 200, 0.045) 43px 44px),
-    #fbfdfe;
+    var(--surface);
   box-shadow: inset 0 -40px 80px rgba(0, 167, 200, 0.06);
 }
 
@@ -1295,7 +1295,7 @@ button {
   padding: 2px 6px;
   border: 1px solid rgba(0, 167, 200, 0.15);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--cyan-strong);
   font-family: inherit;
   font-size: 10px;
@@ -1309,7 +1309,7 @@ button {
   border: 1px solid rgba(0, 167, 200, 0.2);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, #ffffff, #f4fafc),
+    linear-gradient(180deg, var(--surface), var(--surface-soft)),
     repeating-linear-gradient(90deg, transparent 0 79px, rgba(0, 167, 200, 0.12) 80px 81px);
   overflow: hidden;
   cursor: crosshair;
@@ -1450,7 +1450,7 @@ button {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: #ffffff;
+  background: var(--surface);
   border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -1469,7 +1469,7 @@ button {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--cyan-strong);
   border: 1px solid var(--line);
   cursor: pointer;
@@ -1499,7 +1499,7 @@ button {
   padding: 10px 12px;
   border: 1px solid rgba(0, 167, 200, 0.18);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   box-shadow: 0 10px 26px rgba(36, 52, 66, 0.08);
 }
 
@@ -1622,7 +1622,7 @@ button {
   padding: 9px 10px;
   border-radius: 8px;
   border: 1px solid rgba(20, 32, 42, 0.1);
-  background: linear-gradient(180deg, #ffffff, #f7fbfc);
+  background: linear-gradient(180deg, var(--surface), var(--surface-soft));
 }
 
 .reference-head,
@@ -1895,7 +1895,7 @@ button {
   resize: vertical;
   outline: none;
   color: var(--ink);
-  background: #ffffff;
+  background: var(--surface);
   font: inherit;
   font-size: 13px;
   line-height: 1.4;
@@ -2027,7 +2027,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 999px;
   outline: none;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 12px;
 }
@@ -2058,7 +2058,7 @@ button {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   cursor: pointer;
   margin-bottom: 10px;
   transition: border-color 140ms ease, box-shadow 140ms ease;
@@ -2183,7 +2183,7 @@ button {
   resize: none;
   outline: none;
   color: var(--ink);
-  background: #ffffff;
+  background: var(--surface);
   font: inherit;
   line-height: 1.45;
   box-shadow: 0 0 0 4px var(--cyan-soft);
