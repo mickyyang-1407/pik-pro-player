@@ -18,8 +18,8 @@ export interface SharePayload {
   screenshot: string; // Base64
 }
 
-// TODO(2026-07-02): email 通道要換到 pikproplayer@gmail.com——用該帳號部署 scratch/Code.gs 後，把新的 Web App URL 換進來（舊 URL 在此之前仍可用）
-const APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbzTZqIPXJStmzf7P2LeTeBSbDv5ne3z27FqD6uEkgMQRBiPtxY_hstd0wsbAVOF8GD-/exec';
+// 2026-07-02 起：pikproplayer@gmail.com 帳號的部署（原始碼在 scratch/Code.gs，改動後記得在 IDE 部署「新版本」）
+const APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycby5QiFxSQ2Em3HFlltPnHYKwL7eystwoWPdj6w_7Tgg9CxSM9tN46x8oeEJO0pLUxT7Ug/exec';
 
 export async function sendNotes(payload: SharePayload): Promise<boolean> {
   if (APPS_SCRIPT_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {
