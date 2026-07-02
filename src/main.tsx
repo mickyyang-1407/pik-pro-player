@@ -5,6 +5,8 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import './styles.css';
+import html2canvas from 'html2canvas';
+import { sendNotes } from './services/share';
 
 const BASE_W = 1500;
 const BASE_H = 940;
@@ -152,7 +154,7 @@ const targetPlatforms: TargetPlatform[] = [
   { id: 'amazon', label: 'Amazon Music (-14)', target: -14, truePeak: -2 },
   { id: 'ebu', label: 'EBU R128 (-23)', target: -23, truePeak: -1 },
   { id: 'atsc', label: 'ATSC A/85 (-24)', target: -24, truePeak: -2 },
-  { id: 'atmos-music', label: 'Atmos Music (-18)', target: -18, truePeak: -1, note: 'Dolby Atmos: Apple Music / Amazon Music / Tidal' },
+  { id: 'atmos-music', label: 'Atmos Music (-18)', target: -18, truePeak: -1, note: 'Apple / Amazon / Tidal' },
   { id: 'atmos-netflix', label: 'Netflix Atmos (-27)', target: -27, truePeak: -2, tolerance: 2, note: 'dialogue-gated ±2 LU, BS.1770-1' },
 ];
 
@@ -243,9 +245,11 @@ const seedNotes: Note[] = [
 
 function formatTime(seconds: number) {
   const clamped = Math.max(0, seconds);
-  const minutes = Math.floor(clamped / 60);
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
   const wholeSeconds = Math.floor(clamped % 60);
-  return `${minutes.toString().padStart(2, '0')}:${wholeSeconds.toString().padStart(2, '0')}`;
+  const frames = Math.floor((clamped % 1) * 24);
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${wholeSeconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
 }
 
 let noteIdSeed = 100;
@@ -301,7 +305,30 @@ function loudnessPolyline(points: LoudnessPoint[], valueOffset = 0) {
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(36);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
+
+  const resetWindowSize = async () => {
+    try {
+      const win = getCurrentWindow();
+      await win.setSize(new LogicalSize(1500, 940));
+      await win.center();
+    } catch (e) {
+      console.error('Failed to reset window size', e);
+    }
+  };
   const [showAnalytics, setShowAnalytics] = createSignal(false);
+  const [selectedRange, setSelectedRange] = createSignal<{ start: number; end: number } | null>(null);
+  const [appTheme, setAppTheme] = createSignal<string>('light');
+  const [appScale, setAppScale] = createSignal(1);
+
+  // Load from local storage if available
+  createEffect(() => {
+    const savedTheme = localStorage.getItem('appTheme');
+    if (savedTheme) setAppTheme(savedTheme);
+  });
+
+  createEffect(() => {
+    localStorage.setItem('appTheme', appTheme());
+  });
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
   const [notes, setNotes] = createSignal(seedNotes);
   const sortedNotes = createMemo(() => [...notes()].sort((a, b) => {
@@ -937,6 +964,68 @@ function App() {
     void invoke('notes_delete', { id }).catch(() => {});
   };
 
+  const [shareSender, setShareSender] = createSignal(localStorage.getItem('pik-pro-sender-email') || '');
+  const [shareRecipient, setShareRecipient] = createSignal('');
+  const [isSharing, setIsSharing] = createSignal(false);
+  const [shareStatus, setShareStatus] = createSignal('');
+
+  const handleShareNotes = async () => {
+    if (!shareRecipient() || !shareSender()) return;
+    
+    setIsSharing(true);
+    setShareStatus('Preparing data...');
+    
+    try {
+      const appContainer = document.querySelector('.app-container') as HTMLElement;
+      let screenshotBase64 = '';
+      if (appContainer) {
+        const canvas = await html2canvas(appContainer, {
+          backgroundColor: '#0a0d10',
+          scale: 1, 
+        });
+        screenshotBase64 = canvas.toDataURL('image/png');
+      }
+
+      setShareStatus('Sending email...');
+
+      const notesArray = notes().map(n => ({
+        type: n.kind,
+        start: formatTime(n.rangeStart),
+        end: n.kind === 'range' ? formatTime(n.rangeEnd) : null,
+        text: n.body,
+        severity: n.severity || 'minor',
+      }));
+
+      const analytics = {
+        integratedLufs: selectedIntegratedLufs(),
+        truePeak: selectedTruePeak(),
+        loudnessRange: selectedLoudnessRange() !== null ? selectedLoudnessRange()! : '--',
+        targetPlatform: targetPlatform().label,
+      };
+
+      await sendNotes({
+        senderEmail: shareSender(),
+        recipient: shareRecipient(),
+        projectName: 'Pik Pro Player Mix',
+        versionLabel: activeVersion().label,
+        analytics,
+        notes: notesArray,
+        screenshot: screenshotBase64,
+      });
+
+      localStorage.setItem('pik-pro-sender-email', shareSender());
+
+      setShareStatus('Notes sent successfully!');
+      setTimeout(() => setShareStatus(''), 3000);
+      setShareRecipient('');
+    } catch (err: any) {
+      console.error(err);
+      setShareStatus(`Error: ${err.message}`);
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   // Debounced general-note auto-save.
   let generalNoteTimer: ReturnType<typeof setTimeout> | null = null;
   createEffect(() => {
@@ -1328,8 +1417,8 @@ function App() {
   });
 
   return (
-    <main class="review-app">
-      <div class="scaled-app">
+    <main class="review-app" data-theme={appTheme()}>
+      <div class="scaled-app" style={{ transform: `scale(${appScale()})`, 'transform-origin': 'top center', height: `${100 / appScale()}%` }}>
       <header class="topbar">
         <div class="topbar-left">
           <p class="eyebrow">Pik Pro Player</p>
@@ -1374,6 +1463,22 @@ function App() {
         </div>
 
         <div class="topbar-right">
+          <div class="zoom-control" style="flex-direction: row; align-items: center; gap: 8px;">
+            <span>Theme</span>
+            <select
+              value={appTheme()}
+              onChange={(event) => setAppTheme(event.currentTarget.value)}
+            >
+              <option value="light">Light (Default)</option>
+              <option value="dark">Dark Mode</option>
+              <option value="spotify">Spotify Green</option>
+              <option value="ableton">Ableton Grey</option>
+              <option value="flstudio">FL Studio Orange</option>
+            </select>
+          </div>
+          <button type="button" class="ghost-btn" onClick={resetWindowSize} aria-label="Reset Window Size">
+            Default Size
+          </button>
           <span class="transport-status">{loadStatus()}</span>
           <div class="topbar-meta">
             <span>{activeVersion().title}</span>
@@ -1594,21 +1699,20 @@ function App() {
 
           <div class="timeline-card">
             <div class="timeline-head">
-              <div>
-                <span>Locked Range</span>
-                <strong>{selectedRangeLabel()}</strong>
-              </div>
-              <button
-                type="button"
-                class="timeline-toggle-btn"
-                classList={{ 'is-active': linkTimelineEdit() }}
-                onClick={() => setLinkTimelineEdit(!linkTimelineEdit())}
-              >
-                <span class="toggle-indicator"></span>
-                Link Edit to Playhead
-              </button>
-              <div class="timeline-hotkeys">
-                Space: Play/Pause &middot; ←/→: Scrub &middot; N: Point Note &middot; Shift+Click: Expand &middot; Drag: Select Range &middot; Enter: Range Note
+              <div style={{ display: 'flex', 'align-items': 'center', gap: '16px' }}>
+                <div class="timeline-range-badge">
+                  <span>Locked Range</span>
+                  <strong>{selectedRangeLabel()}</strong>
+                </div>
+                <button
+                  type="button"
+                  class="timeline-toggle-btn"
+                  classList={{ 'is-active': linkTimelineEdit() }}
+                  onClick={() => setLinkTimelineEdit(!linkTimelineEdit())}
+                >
+                  <span class="toggle-indicator"></span>
+                  Link Edit to Playhead
+                </button>
               </div>
             </div>
             <div
@@ -1675,6 +1779,15 @@ function App() {
               </For>
             </div>
           </div>
+          
+          <div class="timeline-hotkeys">
+            <span><kbd>Space</kbd> Play / Pause</span>
+            <span><kbd>←</kbd> / <kbd>→</kbd> Scrub</span>
+            <span><kbd>N</kbd> Point Note</span>
+            <span><kbd>Shift</kbd> + Click Expand</span>
+            <span>Drag Select Range</span>
+            <span><kbd>Enter</kbd> Range Note</span>
+          </div>
         </section>
 
         <aside class="notes-panel" classList={{ 'is-collapsed': notesCollapsed() }}>
@@ -1684,7 +1797,7 @@ function App() {
             onClick={() => setNotesCollapsed((collapsed) => !collapsed)}
             aria-label={notesCollapsed() ? 'Expand notes panel' : 'Collapse notes panel'}
           >
-            {notesCollapsed() ? '<' : '>'}
+            {notesCollapsed() ? '◀' : '▶'}
           </button>
 
           {!notesCollapsed() && (
@@ -1996,6 +2109,38 @@ function App() {
                   )}
                 </For>
               </div>
+
+              <div class="share-notes-card">
+                <span>Send Notes via Email</span>
+                <div class="share-notes-form" style="flex-direction: column;">
+                  <input
+                    type="email"
+                    class="share-email-input"
+                    placeholder="Your Email (Sender)"
+                    value={shareSender()}
+                    onInput={(e) => setShareSender(e.currentTarget.value)}
+                  />
+                  <div style="display: flex; gap: 8px;">
+                    <input
+                      type="email"
+                      class="share-email-input"
+                      placeholder="Engineer Email (Recipient)"
+                      value={shareRecipient()}
+                      onInput={(e) => setShareRecipient(e.currentTarget.value)}
+                    />
+                    <button 
+                      type="button" 
+                      class="primary-action" 
+                      onClick={handleShareNotes}
+                      disabled={isSharing() || !shareRecipient() || !shareSender()}
+                    >
+                      {isSharing() ? 'Sending...' : 'Send'}
+                    </button>
+                  </div>
+                </div>
+                {shareStatus() && <p class="share-status-message" classList={{ 'is-error': shareStatus().startsWith('Error') }}>{shareStatus()}</p>}
+              </div>
+
             </div>
           )}
         </aside>
