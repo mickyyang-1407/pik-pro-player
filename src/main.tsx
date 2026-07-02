@@ -296,11 +296,8 @@ function loudnessPolyline(points: LoudnessPoint[], valueOffset = 0) {
       return `${x.toFixed(1)},${(64 - y).toFixed(1)}`;
     })
     .join(' ');
-}
-
 function App() {
   const [notesWidth, setNotesWidth] = createSignal(30);
-  const [zoom, setZoom] = createSignal(100);
   const [notesCollapsed, setNotesCollapsed] = createSignal(false);
   const [showAnalytics, setShowAnalytics] = createSignal(false);
   const [lockedRange, setLockedRange] = createSignal({ start: 95, end: 153 });
@@ -341,6 +338,24 @@ function App() {
   const playbackDuration = createMemo(() => Math.max(0.1, trackDuration()));
   const activeVersion = createMemo(() => mixVersions.find((version) => version.id === activeVersionId()) ?? mixVersions[0]);
   const compareVersion = createMemo(() => mixVersions.find((version) => version.id !== activeVersionId()) ?? mixVersions[1]);
+
+  // ── E4: Real LUFS / True Peak via ebur128 backend ─────────────────────────
+  type LufsSnapshotDto = {
+    available: boolean;
+    sample_rate: number;
+    channels: number;
+    integrated: number | null;
+    short_term: number | null;
+    momentary: number | null;
+    loudness_range: number | null;
+    short_term_max: number | null;
+    momentary_max: number | null;
+    true_peak_db: number | null;
+    true_peak_per_channel: number[];
+    sample_peak_db: number | null;
+  };
+
+  const [liveLufs, setLiveLufs] = createSignal<LufsSnapshotDto | null>(null);
   const selectedIntegratedLufs = createMemo(() => {
     const live = liveLufs();
     if (live && live.integrated !== null) return roundTo(live.integrated, 1);
@@ -384,7 +399,7 @@ function App() {
   const [isPlaying, setIsPlaying] = createSignal(false);
   const [playheadTime, setPlayheadTime] = createSignal(0);
   const [loopEnabled, setLoopEnabled] = createSignal(false);
-  const [activeSpeakers, setActiveSpeakers] = createSignal<Set<string>>(new Set(['C']));
+  const [activeSpeakers, setActiveSpeakers] = createSignal<Set<string>>(new Set());
   const [soloGroups, setSoloGroups] = createSignal<Set<Speaker['group']>>(new Set());
   const [speakerMode, setSpeakerMode] = createSignal<'solo' | 'mute'>('solo');
 
@@ -472,22 +487,7 @@ function App() {
   });
 
   // ── E4: Real LUFS / True Peak via ebur128 backend ─────────────────────────
-  type LufsSnapshotDto = {
-    available: boolean;
-    sample_rate: number;
-    channels: number;
-    integrated: number | null;
-    short_term: number | null;
-    momentary: number | null;
-    loudness_range: number | null;
-    short_term_max: number | null;
-    momentary_max: number | null;
-    true_peak_db: number | null;
-    true_peak_per_channel: number[];
-    sample_peak_db: number | null;
-  };
-
-  const [liveLufs, setLiveLufs] = createSignal<LufsSnapshotDto | null>(null);
+  // Types and signal moved up
 
   createEffect(() => {
     if (!isTauriRuntime() || !hasLoadedAudio()) return;
@@ -543,8 +543,8 @@ function App() {
   const [gridScale, setGridScale] = createSignal(1);
   const BASE_ROOM_W = 560;
 
-  const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : '25%'));
-  const workspaceGrid = createMemo(() => `minmax(0, 1fr) 10px ${panelWidth()}`);
+  const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : `${notesWidth()}%`));
+  const workspaceGrid = createMemo(() => `minmax(0, 1fr) 2px ${panelWidth()}`);
 
   const displayRange = createMemo(() => {
     const start = dragStart();
@@ -1330,10 +1330,24 @@ function App() {
     });
     ro.observe(roomPlaneEl);
     onCleanup(() => ro.disconnect());
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          if (redoStack().length > 0) redo();
+        } else {
+          e.preventDefault();
+          if (undoStack().length > 0) undo();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => window.removeEventListener('keydown', handleKeyDown));
   });
 
   return (
-    <main class="review-app" style={{ '--ui-zoom': `${zoom() / 100}` }}>
+    <main class="review-app">
       <div class="scaled-app">
       <header class="topbar">
         <div class="topbar-title">
@@ -1373,28 +1387,15 @@ function App() {
                 🔁
               </button>
               <span class="transport-time">{formatTime(playheadTime())}</span>
+              <div class="topbar-meta">
+                <span>{activeVersion().title}</span>
+                <strong>{activeVersion().label} · {selectedRangeLabel()}</strong>
+              </div>
               <span class="transport-status">{loadStatus()}</span>
             </div>
           </div>
         </div>
-        <div class="topbar-controls">
-          <label class="zoom-control">
-            <span>Zoom</span>
-            <select value={zoom()} onChange={(event) => {
-              const z = Number(event.currentTarget.value);
-              setZoom(z);
-              getCurrentWindow().setSize(new LogicalSize(
-                Math.round(BASE_W * z / 100),
-                Math.round(BASE_H * z / 100),
-              ));
-            }}>
-              <For each={zoomOptions}>{(option) => <option value={option}>{option}%</option>}</For>
-            </select>
-          </label>
-          <div class="topbar-meta">
-            <span>{activeVersion().title}</span>
-            <strong>{activeVersion().label} · {selectedRangeLabel()}</strong>
-          </div>
+
         </div>
       </header>
 
@@ -1512,7 +1513,7 @@ function App() {
                         <div class="ppm-channel">
                           <span>{meter.label}</span>
                           <div class="ppm-slot">
-                            <i style={{ width: ppmEnabled() ? `${meter.value}%` : '0%' }} />
+                            <i style={{ transform: `scaleX(${ppmEnabled() ? meter.value / 100 : 0})` }} />
                           </div>
                         </div>
                       )}
@@ -1635,7 +1636,13 @@ function App() {
               onPointerUp={onTimelineUp}
               onPointerCancel={onTimelineUp}
             >
-              {/* waveform bg temporarily disabled while debugging blank screen */}
+              <Show when={waveformPeaks()}>
+                {(peaks) => (
+                  <svg class="waveform-bg" preserveAspectRatio="none" viewBox={`0 0 ${peaks().length - 1} 100`}>
+                    <path d={waveformPath()} />
+                  </svg>
+                )}
+              </Show>
               <For each={filteredSortedNotes()}>
                 {(note) => (
                   <div
@@ -1690,8 +1697,7 @@ function App() {
         <button
           type="button"
           class="panel-resizer"
-          classList={{ 'is-disabled': true }}
-          onPointerDown={(event) => event.preventDefault()}
+          onPointerDown={onResizeDown}
           aria-label="Notes panel divider"
         />
 
@@ -1722,20 +1728,22 @@ function App() {
                   <button
                     type="button"
                     class="export-link"
+                    style={{ padding: "2px 6px" }}
                     disabled={undoStack().length === 0}
                     onClick={undo}
                     title="Undo (⌘Z)"
                   >
-                    Undo
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3l-3 2.7"/></svg>
                   </button>
                   <button
                     type="button"
                     class="export-link"
+                    style={{ padding: "2px 6px" }}
                     disabled={redoStack().length === 0}
                     onClick={redo}
                     title="Redo (⌘⇧Z)"
                   >
-                    Redo
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
                   </button>
                 </div>
               </div>
