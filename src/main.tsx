@@ -544,6 +544,136 @@ function App() {
     void seekTo(playheadTime() + deltaSeconds);
   };
 
+  // ─── Seek gesture handlers (single-click ±10s / long-press continuous / double-click back rewind) ───
+  const SEEK_STEP_SECONDS = 10;
+  const SEEK_HOLD_THRESHOLD_MS = 400;
+  const SEEK_HOLD_INTERVAL_MS = 150;
+  const SEEK_HOLD_STEP_SECONDS = 2;
+  const SEEK_DOUBLE_CLICK_WINDOW_MS = 320;
+
+  type SeekGestureState = {
+    pointerId: number | null;
+    holdTimer: number | null;
+    intervalTimer: number | null;
+    holdActivated: boolean;
+    lastClickAt: number;
+  };
+
+  const makeSeekGesture = (direction: -1 | 1) => {
+    const state: SeekGestureState = {
+      pointerId: null,
+      holdTimer: null,
+      intervalTimer: null,
+      holdActivated: false,
+      lastClickAt: 0,
+    };
+
+    const clearTimers = () => {
+      if (state.holdTimer !== null) {
+        window.clearTimeout(state.holdTimer);
+        state.holdTimer = null;
+      }
+      if (state.intervalTimer !== null) {
+        window.clearInterval(state.intervalTimer);
+        state.intervalTimer = null;
+      }
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (state.pointerId !== null) return;
+      state.pointerId = event.pointerId;
+      state.holdActivated = false;
+      const target = event.currentTarget as HTMLElement | null;
+      try {
+        target?.setPointerCapture(event.pointerId);
+      } catch {
+        // ignore capture failures
+      }
+      state.holdTimer = window.setTimeout(() => {
+        state.holdActivated = true;
+        state.holdTimer = null;
+        nudgePlayhead(direction * SEEK_HOLD_STEP_SECONDS);
+        state.intervalTimer = window.setInterval(() => {
+          nudgePlayhead(direction * SEEK_HOLD_STEP_SECONDS);
+        }, SEEK_HOLD_INTERVAL_MS);
+      }, SEEK_HOLD_THRESHOLD_MS);
+    };
+
+    const finish = (event: PointerEvent, aborted: boolean) => {
+      if (state.pointerId === null || state.pointerId !== event.pointerId) return;
+      const target = event.currentTarget as HTMLElement | null;
+      try {
+        target?.releasePointerCapture(event.pointerId);
+      } catch {
+        // ignore
+      }
+      const wasHold = state.holdActivated;
+      state.pointerId = null;
+      clearTimers();
+      if (wasHold || aborted) {
+        state.holdActivated = false;
+        return;
+      }
+      const now = performance.now();
+      const dblWindow = now - state.lastClickAt;
+      if (direction === -1 && dblWindow > 0 && dblWindow <= SEEK_DOUBLE_CLICK_WINDOW_MS) {
+        // Double-click on back button → jump to 0
+        state.lastClickAt = 0;
+        void seekTo(0);
+        return;
+      }
+      state.lastClickAt = now;
+      nudgePlayhead(direction * SEEK_STEP_SECONDS);
+    };
+
+    return {
+      onPointerDown,
+      onPointerUp: (event: PointerEvent) => finish(event, false),
+      onPointerCancel: (event: PointerEvent) => finish(event, true),
+      onPointerLeave: (event: PointerEvent) => {
+        // Only abort if hold-in-progress and pointer physically left button
+        if (state.pointerId === event.pointerId && state.holdActivated) {
+          finish(event, true);
+        }
+      },
+    };
+  };
+
+  const seekBackHandlers = makeSeekGesture(-1);
+  const seekForwardHandlers = makeSeekGesture(1);
+
+  // ─── loadStatus auto-hide (only show while loading / on failure) ───
+  const [loadStatusVisible, setLoadStatusVisible] = createSignal(false);
+  let loadStatusHideTimer: number | null = null;
+
+  createEffect(() => {
+    const status = loadStatus();
+    if (loadStatusHideTimer !== null) {
+      window.clearTimeout(loadStatusHideTimer);
+      loadStatusHideTimer = null;
+    }
+    if (!status) {
+      setLoadStatusVisible(false);
+      return;
+    }
+    const lower = status.toLowerCase();
+    const isLoading = lower.startsWith('loading');
+    const isFailure = lower.includes('fail');
+    if (isLoading || isFailure) {
+      setLoadStatusVisible(true);
+      return;
+    }
+    // Success/idle: hide (or fade out after brief moment)
+    setLoadStatusVisible(false);
+  });
+
+  onCleanup(() => {
+    if (loadStatusHideTimer !== null) {
+      window.clearTimeout(loadStatusHideTimer);
+    }
+  });
+
+
   const loadAudioPath = async (path: string) => {
     setLoadStatus('Loading audio...');
     try {
@@ -1288,15 +1418,17 @@ function App() {
         loopEnabled={loopEnabled}
         playheadTime={playheadTime}
         loadStatus={loadStatus}
+        loadStatusVisible={loadStatusVisible}
         appTheme={appTheme}
         setAppTheme={setAppTheme}
         activeVersion={activeVersion}
         onLoadAudioClick={onLoadAudioClick}
         onAudioFileChange={onAudioFileChange}
-        stopPlayback={stopPlayback}
         togglePlay={togglePlay}
         toggleLoop={toggleLoop}
         resetWindowSize={resetWindowSize}
+        seekBack={seekBackHandlers}
+        seekForward={seekForwardHandlers}
         audioInputRef={(el) => (audioInputEl = el)}
       />
 

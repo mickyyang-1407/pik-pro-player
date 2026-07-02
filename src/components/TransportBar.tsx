@@ -1,5 +1,12 @@
-import { Accessor } from 'solid-js';
+import { Accessor, Show } from 'solid-js';
 import { formatTime } from '../utils';
+
+type SeekHandlers = {
+  onPointerDown: (event: PointerEvent) => void;
+  onPointerUp: (event: PointerEvent) => void;
+  onPointerCancel?: (event: PointerEvent) => void;
+  onPointerLeave?: (event: PointerEvent) => void;
+};
 
 type TransportBarProps = {
   trackTitle: Accessor<string>;
@@ -7,15 +14,17 @@ type TransportBarProps = {
   loopEnabled: Accessor<boolean>;
   playheadTime: Accessor<number>;
   loadStatus: Accessor<string>;
+  loadStatusVisible: Accessor<boolean>;
   appTheme: Accessor<string>;
   setAppTheme: (theme: string) => void;
   activeVersion: Accessor<{ title: string; label: string }>;
   onLoadAudioClick: () => void;
   onAudioFileChange: (event: Event) => void;
-  stopPlayback: () => void;
   togglePlay: () => void;
   toggleLoop: () => void;
   resetWindowSize: () => void;
+  seekBack: SeekHandlers;
+  seekForward: SeekHandlers;
   audioInputRef: (el: HTMLInputElement) => void;
 };
 
@@ -38,11 +47,24 @@ export function TransportBar(props: TransportBarProps) {
           <button type="button" class="transport-btn is-load" onClick={props.onLoadAudioClick} aria-label="Load audio file">
             Load
           </button>
+          <button type="button" class="ghost-btn is-default-size" onClick={props.resetWindowSize} aria-label="Reset Window Size">
+            Default Size
+          </button>
         </div>
       </div>
 
-      <div class="transport-bar">
-        <button type="button" class="transport-btn is-stop" onClick={props.stopPlayback} aria-label="Stop">■</button>
+      <div class="transport-pill">
+        <button
+          type="button"
+          class="transport-btn is-seek is-seek-back"
+          onPointerDown={props.seekBack.onPointerDown}
+          onPointerUp={props.seekBack.onPointerUp}
+          onPointerCancel={props.seekBack.onPointerCancel}
+          onPointerLeave={props.seekBack.onPointerLeave}
+          aria-label="Seek back (click -10s, double-click to start, hold to rewind)"
+        >
+          ⏪
+        </button>
         <button
           type="button"
           class="transport-btn is-play"
@@ -51,6 +73,17 @@ export function TransportBar(props: TransportBarProps) {
           aria-label={props.isPlaying() ? 'Pause' : 'Play'}
         >
           {props.isPlaying() ? '❚❚' : '▶'}
+        </button>
+        <button
+          type="button"
+          class="transport-btn is-seek is-seek-fwd"
+          onPointerDown={props.seekForward.onPointerDown}
+          onPointerUp={props.seekForward.onPointerUp}
+          onPointerCancel={props.seekForward.onPointerCancel}
+          onPointerLeave={props.seekForward.onPointerLeave}
+          aria-label="Seek forward (click +10s, hold to fast-forward)"
+        >
+          ⏩
         </button>
         <button
           type="button"
@@ -65,7 +98,7 @@ export function TransportBar(props: TransportBarProps) {
       </div>
 
       <div class="topbar-right">
-        <div class="zoom-control" style="flex-direction: row; align-items: center; gap: 8px;">
+        <div class="theme-pill">
           <span>Theme</span>
           <select
             value={props.appTheme()}
@@ -78,10 +111,9 @@ export function TransportBar(props: TransportBarProps) {
             <option value="flstudio">FL Studio Orange</option>
           </select>
         </div>
-        <button type="button" class="ghost-btn" onClick={props.resetWindowSize} aria-label="Reset Window Size">
-          Default Size
-        </button>
-        <span class="transport-status">{props.loadStatus()}</span>
+        <Show when={props.loadStatusVisible()}>
+          <span class="transport-status">{props.loadStatus()}</span>
+        </Show>
         <div class="topbar-meta">
           <span>{props.activeVersion().title}</span>
           <strong>{props.activeVersion().label}</strong>
