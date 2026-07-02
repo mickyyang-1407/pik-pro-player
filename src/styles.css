@@ -214,6 +214,21 @@ button {
   75%, 100% { transform: translateX(min(0px, calc(320px - 100%))); }
 }
 
+/* ── Transport pill (Apple Music style container around playback controls) ── */
+.transport-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.04);
+}
+
+/* Backwards-compat */
 .transport-bar {
   display: flex;
   align-items: center;
@@ -229,71 +244,95 @@ button {
 .transport-btn {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: var(--radius-btn);
   display: grid;
   place-items: center;
-  background: var(--surface-soft);
-  color: var(--text-muted);
+  background: transparent;
+  color: var(--ink);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.transport-btn:hover {
+  background: var(--surface-soft);
+}
+
+.transport-btn:active {
+  transform: scale(0.94);
 }
 
 .transport-btn.is-load {
   width: auto;
   min-width: 44px;
-  padding: 0 10px;
+  padding: 0 12px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
   color: var(--cyan-strong);
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.transport-btn.is-stop:hover {
-  background: #e2e8ec;
+.transport-btn.is-load:hover {
+  background: var(--cyan-soft);
 }
 
-.transport-btn.is-stop:active {
-  transform: scale(0.94);
+.transport-btn.is-seek {
+  color: var(--ink);
+  font-size: 13px;
+  user-select: none;
+  touch-action: none;
 }
 
 .transport-btn.is-play {
-  background: #1fae55;
+  background: var(--cyan);
   color: #ffffff;
-  box-shadow: 0 4px 10px rgba(31, 174, 85, 0.28);
-  font-size: 16px;
-  width: 40px;
-  height: 40px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
+  font-size: 15px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
 }
 
 .transport-btn.is-play:hover {
-  background: #189246;
+  background: var(--cyan-strong);
 }
 
 .transport-btn.is-play.is-active {
-  background: #0d7a38;
+  background: var(--cyan-strong);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
+.transport-btn.is-loop {
+  color: var(--muted);
+}
+
 .transport-btn.is-loop.is-active {
-  background: var(--cyan);
-  color: #ffffff;
-  box-shadow: var(--tight-shadow);
+  background: var(--loop-active);
+  color: var(--loop-active-ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.transport-btn.is-loop.is-active:hover {
+  background: var(--loop-active);
+  filter: brightness(1.05);
 }
 
 .transport-time {
-  min-width: 90px;
+  min-width: 78px;
   color: var(--cyan-strong);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  background: rgba(0, 167, 200, 0.08);
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-btn);
   text-align: center;
   letter-spacing: 0.05em;
+  background: transparent;
 }
 
 .transport-status {
@@ -305,6 +344,11 @@ button {
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  transition: opacity 240ms ease;
 }
 
 .topbar-meta {
@@ -344,6 +388,47 @@ button {
   text-align: center;
 }
 
+/* ── Theme pill (right side, matches transport pill visual weight) ── */
+.theme-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.theme-pill > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.theme-pill select {
+  height: 26px;
+  min-width: 110px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  color: var(--cyan-strong);
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+  text-align: center;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+/* Default Size button lives inside title-row now */
+.ghost-btn.is-default-size {
+  padding: 4px 12px;
+  height: 28px;
+}
+
 .topbar-meta span,
 .topbar-meta strong {
   display: block;
@@ -365,9 +450,9 @@ button {
   min-height: 0;
   display: grid;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   transition: background 0.3s ease, border-color 0.3s ease;
 }
@@ -514,7 +599,7 @@ button {
 .speaker-view {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 
@@ -599,7 +684,7 @@ button {
   justify-content: center;
   gap: 4px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: linear-gradient(180deg, rgba(0, 167, 200, 0.1), rgba(0, 167, 200, 0.04));
   border: 1px solid rgba(0, 167, 200, 0.2);
 }
@@ -654,7 +739,7 @@ button {
 
 .loudness-stats div {
   padding: 7px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
 }
 
@@ -689,7 +774,7 @@ button {
 .loudness-bar-card {
   grid-area: bar;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
   border: 1px solid var(--cyan-soft);
 }
@@ -783,6 +868,7 @@ button {
 .loudness-current {
   background: var(--cyan);
   box-shadow: 0 0 0 4px rgba(0, 167, 200, 0.12);
+  transition: left 100ms linear;
 }
 
 .loudness-current.is-warn {
@@ -844,7 +930,7 @@ button {
   gap: 4px;
   padding: 6px 8px 8px;
   border: 1px solid var(--cyan-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   overflow: hidden;
 }
@@ -973,7 +1059,7 @@ button {
   border-radius: 999px;
   background: linear-gradient(90deg, #1fae55 0%, #1fae55 60%, #f2b705 75%, #e74c3c 95%);
   transform-origin: left;
-  transition: transform 30ms linear;
+  transition: transform 100ms linear;
 }
 
 .speaker-view {
@@ -1030,7 +1116,7 @@ button {
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(0, 167, 200, 0.22);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background:
     linear-gradient(180deg, rgba(0, 167, 200, 0.05), transparent 42%),
     repeating-linear-gradient(90deg, transparent 0 42px, rgba(0, 167, 200, 0.055) 43px 44px),
@@ -1049,7 +1135,7 @@ button {
 .room-plane::before {
   inset: 16% 17% 13%;
   border: 1px dashed rgba(0, 167, 200, 0.24);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
 }
 
 .room-plane::after {
@@ -1245,7 +1331,7 @@ button {
   margin: 0 28px 12px;
   padding: 18px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 
@@ -1267,7 +1353,7 @@ button {
   gap: 12px;
   background: var(--surface-soft);
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
 }
 
 .timeline-range-badge span {
@@ -1335,7 +1421,7 @@ button {
   position: relative;
   height: 58px;
   border: 1px solid rgba(0, 167, 200, 0.2);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background:
     linear-gradient(180deg, var(--surface), var(--surface-soft)),
     repeating-linear-gradient(90deg, transparent 0 79px, rgba(0, 167, 200, 0.12) 80px 81px);
@@ -1526,7 +1612,7 @@ button {
 .version-compare-card {
   padding: 10px 12px;
   border: 1px solid rgba(0, 167, 200, 0.18);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: 0 10px 26px rgba(36, 52, 66, 0.08);
 }
@@ -1648,7 +1734,7 @@ button {
 
 .reference-card {
   padding: 9px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   border: 1px solid rgba(20, 32, 42, 0.1);
   background: linear-gradient(180deg, var(--surface), var(--surface-soft));
 }
@@ -1785,7 +1871,7 @@ button {
 .phase-card {
   padding: 8px 10px;
   border: 1px solid rgba(142, 99, 215, 0.18);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: linear-gradient(180deg, rgba(142, 99, 215, 0.08), rgba(255, 255, 255, 0.94));
 }
 
@@ -1900,7 +1986,7 @@ button {
 
 .general-note-card {
   padding: 7px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: linear-gradient(180deg, rgba(0, 167, 200, 0.08), rgba(0, 167, 200, 0.02));
   border: 1px solid rgba(0, 167, 200, 0.18);
 }
@@ -1938,7 +2024,7 @@ button {
   margin-top: 24px;
   padding: 16px;
   background: var(--surface-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   border: 1px solid rgba(0, 167, 200, 0.15);
   display: flex;
   flex-direction: column;
@@ -2006,7 +2092,7 @@ button {
 
 .locked-card {
   padding: 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
   border: 1px solid rgba(0, 167, 200, 0.18);
 }
@@ -2020,7 +2106,7 @@ button {
 
 .primary-action {
   height: 42px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--cyan);
   color: #ffffff;
   cursor: pointer;
@@ -2085,7 +2171,7 @@ button {
 .note-item {
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   cursor: pointer;
   margin-bottom: 10px;
@@ -2207,7 +2293,7 @@ button {
   margin-top: 9px;
   padding: 10px;
   border: 1px solid var(--cyan);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   resize: none;
   outline: none;
   color: var(--ink);

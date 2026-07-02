@@ -18,6 +18,7 @@ type TimelineProps = {
   onTimelineDown: (event: PointerEvent) => void;
   onTimelineMove: (event: PointerEvent) => void;
   onTimelineUp: (event: PointerEvent) => void;
+  onTimelineDblClick: (event: MouseEvent) => void;
   timelineRef: (el: HTMLDivElement) => void;
   waveformPeaks: Accessor<number[] | null>;
   waveformPath: Accessor<string>;
@@ -59,6 +60,7 @@ export function Timeline(props: TimelineProps) {
           onPointerMove={props.onTimelineMove}
           onPointerUp={props.onTimelineUp}
           onPointerCancel={props.onTimelineUp}
+          onDblClick={props.onTimelineDblClick}
         >
           <Show when={props.waveformPeaks()}>
             {(peaks) => (
@@ -81,6 +83,7 @@ export function Timeline(props: TimelineProps) {
                   width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / props.playbackDuration()) * 100)}%`,
                 }}
                 onPointerDown={(event) => event.stopPropagation()}
+                onDblClick={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
                   props.selectNote(note);

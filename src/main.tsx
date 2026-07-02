@@ -527,18 +527,6 @@ function App() {
     }
   };
 
-  const stopPlayback = async () => {
-    setIsPlaying(false);
-    if (hasLoadedAudio()) {
-      try {
-        await invoke('player_pause');
-        await invoke('player_seek', { position: 0 });
-      } catch (error) {
-        setLoadStatus(`Stop failed: ${String(error)}`);
-      }
-    }
-    setPlayheadTime(0);
-  };
   const toggleLoop = () => setLoopEnabled((enabled) => !enabled);
   const nudgePlayhead = (deltaSeconds: number) => {
     void seekTo(playheadTime() + deltaSeconds);
@@ -1039,14 +1027,15 @@ function App() {
     }, 400);
   });
 
-  const addPointNoteAtPlayhead = () => {
-    const time = playheadTime();
+  const addPointNoteAt = (time: number) => {
     const id = nextNoteId();
     setLastPointNoteId(id);
     setLockedRange({ start: time, end: time });
     setDragStart(time);
     startEditingNote({ id, rangeStart: time, rangeEnd: time, body: '', status: 'open', kind: 'point', severity: 'minor' });
   };
+
+  const addPointNoteAtPlayhead = () => addPointNoteAt(playheadTime());
 
   const addRangeNoteDraft = () => {
     const range = displayRange();
@@ -1327,11 +1316,20 @@ function App() {
     return percent * playbackDuration();
   };
 
+  // click-seek 延遲執行：等 260ms 確認不是雙擊才 seek（雙擊=插 note，不得移動播放位置）
+  let pendingClickSeekTimer: ReturnType<typeof setTimeout> | null = null;
+  onCleanup(() => {
+    if (pendingClickSeekTimer) clearTimeout(pendingClickSeekTimer);
+  });
+  // shift 展開 range 不算單擊，pointerup 不觸發 click-seek
+  let dragStartedWithShift = false;
+
   const onTimelineDown = (event: PointerEvent) => {
     if (event.button !== 0) return;
     const time = timeFromPointer(event.clientX);
 
     if (event.shiftKey) {
+      dragStartedWithShift = true;
       const origin = dragStart() ?? lockedRange().start;
       const newStart = Math.min(origin, time);
       const newEnd = Math.max(origin, time);
@@ -1362,9 +1360,8 @@ function App() {
       return;
     }
     setSelectedNoteId(null);
-    if (linkTimelineEdit()) {
-      void seekTo(time);
-    }
+    dragStartedWithShift = false;
+    if (pendingClickSeekTimer) { clearTimeout(pendingClickSeekTimer); pendingClickSeekTimer = null; }
     setDragStart(time);
     setDragNow(time);
     setLockedRange({ start: time, end: time });
@@ -1386,9 +1383,37 @@ function App() {
   const onTimelineUp = (event: PointerEvent) => {
     if (!isDraggingTimeline()) return;
     onTimelineMove(event);
+    const start = dragStart();
+    const end = dragNow();
     setIsDraggingTimeline(false);
     setDragStart(null);
     setDragNow(null);
+    // 工作播放邏輯：無拖曳的單擊 = 定位。播放中直接跳播、停止時只移 playhead；
+    // link 開啟時額外自動起播。三種情況不觸發 seek：
+    // 拖曳框選（位移超過 epsilon）、shift 展開 range、pointercancel（非真正放開）。
+    // seek 延遲 260ms 執行，雙擊進來會取消——雙擊=插 note，不得移動播放位置。
+    if (dragStartedWithShift) { dragStartedWithShift = false; return; }
+    if (event.type === 'pointercancel') return;
+    const clickEpsilon = playbackDuration() * 0.005;
+    if (start !== null && end !== null && Math.abs(end - start) <= clickEpsilon) {
+      if (pendingClickSeekTimer) clearTimeout(pendingClickSeekTimer);
+      pendingClickSeekTimer = setTimeout(() => {
+        pendingClickSeekTimer = null;
+        void seekTo(end);
+        if (linkTimelineEdit() && !isPlaying()) {
+          void togglePlay();
+        }
+      }, 260);
+    }
+  };
+
+  const onTimelineDblClick = (event: MouseEvent) => {
+    // 雙擊優先：取消尚未執行的單擊 seek，播放位置不動
+    if (pendingClickSeekTimer) { clearTimeout(pendingClickSeekTimer); pendingClickSeekTimer = null; }
+    const time = timeFromPointer(event.clientX);
+    // 第一擊若已建立 note（框內單擊生成 range note 的既有路徑），不再疊加 point note
+    if (editingNoteId() !== null) return;
+    addPointNoteAt(time);
   };
 
 
@@ -1474,6 +1499,7 @@ function App() {
             onTimelineDown={onTimelineDown}
             onTimelineMove={onTimelineMove}
             onTimelineUp={onTimelineUp}
+            onTimelineDblClick={onTimelineDblClick}
             timelineRef={(el) => (timelineEl = el)}
             waveformPeaks={waveformPeaks}
             waveformPath={waveformPath}
