@@ -5,6 +5,7 @@
 #import <objc/runtime.h>
 #import <stdlib.h>
 #import <string.h>
+#import <stdatomic.h>
 
 // --- EQ Processing Tap ---
 
@@ -22,6 +23,21 @@ typedef struct {
     float delay[12][4];
 } EQBandContext;
 
+// Sample ring buffer for LUFS/True Peak analysis on the Rust side.
+// Interleaved float32 frames (channels tightly packed per frame).
+// Single-producer (tap thread) / single-consumer (Rust worker) — head/tail atomic.
+#define LUFS_RING_FRAMES 65536            // ~1.36s at 48kHz per channel
+#define LUFS_RING_MAX_CHANNELS 12
+
+typedef struct {
+    float *data;                          // capacity: LUFS_RING_FRAMES * channels floats
+    unsigned int capacityFrames;
+    unsigned int channels;                // frozen after first non-zero write
+    _Atomic unsigned int head;            // write index (frames), producer only
+    _Atomic unsigned int tail;            // read index (frames), consumer only
+    unsigned int sampleRate;              // Hz, for ebur128
+} SampleRing;
+
 typedef struct {
     BOOL enabled;
     float preamp;
@@ -33,6 +49,7 @@ typedef struct {
     int meterChannels;
     unsigned int meterSequence;
     unsigned int muteMask; // bit i = mute channel i (channel order matches meter labels)
+    SampleRing lufsRing;
 } EQContext;
 
 static void calculate_biquad_coeffs(EQBandContext *band, Float64 sampleRate) {
@@ -77,6 +94,10 @@ static void tap_FinalizeCallback(MTAudioProcessingTapRef tap) {
                 vDSP_biquad_DestroySetup(context->bands[i].biquadSetup);
             }
         }
+        if (context->lufsRing.data) {
+            free(context->lufsRing.data);
+            context->lufsRing.data = NULL;
+        }
         free(context);
     }
 }
@@ -89,6 +110,8 @@ static void tap_PrepareCallback(MTAudioProcessingTapRef tap, CMItemCount maxFram
         for (int i = 0; i < context->numBands; i++) {
             context->bands[i].needsSetup = YES;
         }
+        // (Re)allocate the sample ring lazily on first Process call — we don't yet know channel count here.
+        context->lufsRing.sampleRate = (unsigned int)processingFormat->mSampleRate;
     }
 }
 
@@ -123,6 +146,55 @@ static void tap_ProcessCallback(MTAudioProcessingTapRef tap, CMItemCount numberF
         context->meterPeak[bufIdx] = peak;
     }
     context->meterSequence++;
+
+    // Push interleaved samples into the LUFS ring (pre-mute so LUFS reflects the actual file content).
+    {
+        UInt32 chCount = bufferListInOut->mNumberBuffers;
+        if (chCount > LUFS_RING_MAX_CHANNELS) chCount = LUFS_RING_MAX_CHANNELS;
+
+        UInt32 frameCount = 0;
+        if (chCount > 0) {
+            frameCount = bufferListInOut->mBuffers[0].mDataByteSize / sizeof(float);
+        }
+
+        SampleRing *ring = &context->lufsRing;
+
+        // Lazy allocate on first non-zero call.
+        if (!ring->data && chCount > 0 && frameCount > 0) {
+            ring->channels = chCount;
+            ring->capacityFrames = LUFS_RING_FRAMES;
+            ring->data = (float *)calloc(ring->capacityFrames * ring->channels, sizeof(float));
+            atomic_store(&ring->head, 0u);
+            atomic_store(&ring->tail, 0u);
+        }
+
+        if (ring->data && chCount == ring->channels && frameCount > 0) {
+            unsigned int head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+            unsigned int tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
+            unsigned int cap = ring->capacityFrames;
+            unsigned int used = (head - tail) & (0xFFFFFFFFu); // wrapping subtract; interpret via % cap
+            // Free space (in frames), leave 1 slot to disambiguate full vs empty.
+            unsigned int freeFrames = cap - (used % cap) - 1;
+
+            // Drop if the consumer has fallen too far behind — this is metering, not playback.
+            if (freeFrames < frameCount) {
+                // Advance tail past the oldest frames to make room. This drops the oldest samples.
+                unsigned int drop = frameCount - freeFrames;
+                atomic_store_explicit(&ring->tail, tail + drop, memory_order_release);
+                tail += drop;
+            }
+
+            for (UInt32 f = 0; f < frameCount; f++) {
+                unsigned int wf = (head + f) % cap;
+                float *dst = ring->data + (size_t)wf * ring->channels;
+                for (UInt32 c = 0; c < chCount; c++) {
+                    float *chData = (float *)bufferListInOut->mBuffers[c].mData;
+                    dst[c] = (chData && f < frameCount) ? chData[f] : 0.0f;
+                }
+            }
+            atomic_store_explicit(&ring->head, head + frameCount, memory_order_release);
+        }
+    }
 
     // Channel mutes run after metering: PPM keeps showing source levels while muted channels go silent
     if (context->muteMask) {
@@ -321,6 +393,60 @@ void atmos_set_channel_mutes(void* player_ptr, unsigned int mute_mask) {
     if (!context) return;
 
     context->muteMask = mute_mask;
+}
+
+// Drains up to `max_frames` interleaved f32 frames from the LUFS ring into `out`.
+// `out` must hold at least `max_frames * channels` floats.
+// Returns the number of frames actually written; also outputs the channel count and sample rate.
+unsigned int atmos_drain_samples(void* player_ptr, float *out, unsigned int max_frames,
+                                 unsigned int *out_channels, unsigned int *out_sample_rate) {
+    if (out_channels) *out_channels = 0;
+    if (out_sample_rate) *out_sample_rate = 0;
+    if (!player_ptr || !out || max_frames == 0) return 0;
+
+    AVPlayer *player = (__bridge AVPlayer*)player_ptr;
+    NSValue *ctxVal = objc_getAssociatedObject(player, "eqContext");
+    if (!ctxVal) return 0;
+    EQContext *context = (EQContext *)[ctxVal pointerValue];
+    if (!context || !context->lufsRing.data) return 0;
+
+    SampleRing *ring = &context->lufsRing;
+    unsigned int channels = ring->channels;
+    unsigned int cap = ring->capacityFrames;
+    if (out_channels) *out_channels = channels;
+    if (out_sample_rate) *out_sample_rate = ring->sampleRate;
+
+    unsigned int head = atomic_load_explicit(&ring->head, memory_order_acquire);
+    unsigned int tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
+    unsigned int available = head - tail;
+    if (available > cap) available = cap;
+
+    unsigned int toRead = available < max_frames ? available : max_frames;
+    if (toRead == 0) return 0;
+
+    for (unsigned int f = 0; f < toRead; f++) {
+        unsigned int rf = (tail + f) % cap;
+        float *src = ring->data + (size_t)rf * channels;
+        float *dst = out + (size_t)f * channels;
+        memcpy(dst, src, sizeof(float) * channels);
+    }
+
+    atomic_store_explicit(&ring->tail, tail + toRead, memory_order_release);
+    return toRead;
+}
+
+// Clear the LUFS ring buffer — call on load, seek, or explicit LUFS reset.
+void atmos_reset_lufs_ring(void* player_ptr) {
+    if (!player_ptr) return;
+    AVPlayer *player = (__bridge AVPlayer*)player_ptr;
+    NSValue *ctxVal = objc_getAssociatedObject(player, "eqContext");
+    if (!ctxVal) return;
+    EQContext *context = (EQContext *)[ctxVal pointerValue];
+    if (!context) return;
+
+    SampleRing *ring = &context->lufsRing;
+    unsigned int head = atomic_load_explicit(&ring->head, memory_order_acquire);
+    atomic_store_explicit(&ring->tail, head, memory_order_release);
 }
 
 char* atmos_get_meter_json(void* player_ptr) {

@@ -1,6 +1,7 @@
 mod player;
 
 use player::atmos::{AtmosPlayer, PositionPayload};
+use player::lufs::LufsSnapshot;
 use tauri::{Manager, State};
 
 #[tauri::command]
@@ -54,6 +55,17 @@ fn player_set_channel_mutes(mask: u32, player: State<'_, AtmosPlayer>) -> Result
 }
 
 #[tauri::command]
+fn player_lufs_snapshot(player: State<'_, AtmosPlayer>) -> LufsSnapshot {
+    player.lufs_snapshot()
+}
+
+#[tauri::command]
+fn player_reset_lufs(player: State<'_, AtmosPlayer>) -> Result<(), String> {
+    player.reset_lufs();
+    Ok(())
+}
+
+#[tauri::command]
 fn player_stop(player: State<'_, AtmosPlayer>) -> Result<(), String> {
     player.stop()
 }
@@ -78,6 +90,8 @@ pub fn run() {
             player_is_playing,
             player_meter_json,
             player_set_channel_mutes,
+            player_lufs_snapshot,
+            player_reset_lufs,
             player_stop
         ])
         .run(tauri::generate_context!())

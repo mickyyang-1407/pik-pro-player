@@ -6,6 +6,8 @@ use std::sync::{
 };
 use tauri::{AppHandle, Emitter};
 
+use super::lufs::{LufsSnapshot, LufsState};
+
 extern "C" {
     fn atmos_create(path: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
     fn atmos_destroy(player: *mut std::ffi::c_void);
@@ -32,6 +34,8 @@ pub struct AtmosPlayer {
     player: Arc<Mutex<Option<usize>>>,
     app_handle: Arc<Mutex<Option<AppHandle>>>,
     observer_running: Arc<AtomicBool>,
+    lufs_running: Arc<AtomicBool>,
+    lufs: LufsState,
 }
 
 impl AtmosPlayer {
@@ -40,6 +44,8 @@ impl AtmosPlayer {
             player: Arc::new(Mutex::new(None)),
             app_handle: Arc::new(Mutex::new(None)),
             observer_running: Arc::new(AtomicBool::new(false)),
+            lufs_running: Arc::new(AtomicBool::new(false)),
+            lufs: LufsState::new(),
         }
     }
 
@@ -69,7 +75,9 @@ impl AtmosPlayer {
             *player = Some(player_ptr as usize);
         }
 
+        self.lufs.reset();
         self.start_observer(app);
+        self.start_lufs_worker();
         self.position().ok_or("Player loaded without a readable position".into())
     }
 
@@ -118,6 +126,37 @@ impl AtmosPlayer {
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
 
+            running.store(false, Ordering::SeqCst);
+        });
+    }
+
+    fn start_lufs_worker(&self) {
+        if self.lufs_running.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let player_arc = self.player.clone();
+        let running = self.lufs_running.clone();
+        let lufs = self.lufs.clone();
+
+        std::thread::spawn(move || {
+            while running.load(Ordering::SeqCst) {
+                let ptr_opt = {
+                    let p = player_arc.lock().unwrap();
+                    *p
+                };
+                if let Some(ptr) = ptr_opt {
+                    let ptr = ptr as *mut std::ffi::c_void;
+                    // Drain repeatedly to keep the ring below overflow when playback is running.
+                    // Loop bounded so we don't starve — max 4 drains per tick (~32k frames).
+                    for _ in 0..4 {
+                        if !lufs.process_from_player(ptr) {
+                            break;
+                        }
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
             running.store(false, Ordering::SeqCst);
         });
     }
@@ -174,8 +213,26 @@ impl AtmosPlayer {
             .unwrap_or(false)
     }
 
+    pub fn lufs_snapshot(&self) -> LufsSnapshot {
+        self.lufs.snapshot()
+    }
+
+    pub fn reset_lufs(&self) {
+        let ptr = {
+            let p = self.player.lock().unwrap();
+            (*p).map(|ptr| ptr as *mut std::ffi::c_void)
+        };
+        if let Some(ptr) = ptr {
+            self.lufs.reset_with_player(ptr);
+        } else {
+            self.lufs.reset();
+        }
+    }
+
     pub fn stop(&self) -> Result<(), String> {
         self.observer_running.store(false, Ordering::SeqCst);
+        self.lufs_running.store(false, Ordering::SeqCst);
+        self.lufs.reset();
 
         let mut player = self.player.lock().unwrap();
         if let Some(ptr) = player.take() {

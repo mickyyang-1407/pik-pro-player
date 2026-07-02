@@ -126,6 +126,11 @@ const ppmPercentFromDb = (db: number) => {
 };
 
 const linearToDb = (value: number) => (value > 0 ? 20 * Math.log10(value) : -Infinity);
+const roundTo = (value: number, digits: number) => {
+  if (!Number.isFinite(value)) return value;
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+};
 
 type MeterChannel = { label: string; rms: number; peak: number };
 
@@ -335,8 +340,36 @@ function App() {
   const playbackDuration = createMemo(() => Math.max(0.1, trackDuration()));
   const activeVersion = createMemo(() => mixVersions.find((version) => version.id === activeVersionId()) ?? mixVersions[0]);
   const compareVersion = createMemo(() => mixVersions.find((version) => version.id !== activeVersionId()) ?? mixVersions[1]);
-  const selectedIntegratedLufs = createMemo(() => activeVersion().integratedLufs);
-  const selectedTruePeak = createMemo(() => activeVersion().truePeak);
+  const selectedIntegratedLufs = createMemo(() => {
+    const live = liveLufs();
+    if (live && live.integrated !== null) return roundTo(live.integrated, 1);
+    return activeVersion().integratedLufs;
+  });
+  const selectedTruePeak = createMemo(() => {
+    const live = liveLufs();
+    if (live && live.true_peak_db !== null) return roundTo(live.true_peak_db, 1);
+    return activeVersion().truePeak;
+  });
+  const selectedShortTerm = createMemo(() => {
+    const live = liveLufs();
+    if (live && live.short_term !== null) return roundTo(live.short_term, 1);
+    return null;
+  });
+  const selectedLoudnessRange = createMemo(() => {
+    const live = liveLufs();
+    if (live && live.loudness_range !== null) return roundTo(live.loudness_range, 1);
+    return null;
+  });
+  const selectedShortTermMax = createMemo(() => {
+    const live = liveLufs();
+    if (live && live.short_term_max !== null) return roundTo(live.short_term_max, 1);
+    return null;
+  });
+  const selectedMomentaryMax = createMemo(() => {
+    const live = liveLufs();
+    if (live && live.momentary_max !== null) return roundTo(live.momentary_max, 1);
+    return null;
+  });
   const currentCurveOffset = createMemo(() => selectedIntegratedLufs() - mixVersions[0].integratedLufs);
   const currentCurvePoints = createMemo(() => loudnessPolyline(currentLoudnessCurve, currentCurveOffset()));
   const referenceCurvePoints = createMemo(() => loudnessPolyline(referenceLoudnessCurve));
@@ -435,6 +468,49 @@ function App() {
       const channel = byLabel.get(label);
       return { label, value: channel ? ppmPercentFromDb(linearToDb(channel.peak)) : 0 };
     });
+  });
+
+  // ── E4: Real LUFS / True Peak via ebur128 backend ─────────────────────────
+  type LufsSnapshotDto = {
+    available: boolean;
+    sample_rate: number;
+    channels: number;
+    integrated: number | null;
+    short_term: number | null;
+    momentary: number | null;
+    loudness_range: number | null;
+    short_term_max: number | null;
+    momentary_max: number | null;
+    true_peak_db: number | null;
+    true_peak_per_channel: number[];
+    sample_peak_db: number | null;
+  };
+
+  const [liveLufs, setLiveLufs] = createSignal<LufsSnapshotDto | null>(null);
+
+  createEffect(() => {
+    if (!isTauriRuntime() || !hasLoadedAudio()) return;
+    const timer = setInterval(async () => {
+      try {
+        const snap = await invoke<LufsSnapshotDto>('player_lufs_snapshot');
+        if (snap && snap.available) setLiveLufs(snap);
+      } catch {
+        // player may be mid-reload; skip this frame
+      }
+    }, 250);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  // Reset the analyser on every new load — mock defaults are shown until first real values arrive.
+  createEffect(() => {
+    if (!isTauriRuntime()) return;
+    const loaded = hasLoadedAudio();
+    if (!loaded) {
+      setLiveLufs(null);
+      return;
+    }
+    setLiveLufs(null);
+    void invoke('player_reset_lufs').catch(() => {});
   });
 
   const [lufsEnabled, setLufsEnabled] = createSignal(true);
@@ -1028,11 +1104,11 @@ function App() {
               <div class="loudness-stats" classList={{ 'is-disabled': !lufsEnabled() }}>
                 <div>
                   <span>Range</span>
-                  <strong>{lufsEnabled() ? '7.6 LU' : '--'}</strong>
+                  <strong>{lufsEnabled() ? (selectedLoudnessRange() !== null ? `${selectedLoudnessRange()} LU` : '— LU') : '--'}</strong>
                 </div>
                 <div>
                   <span>Short</span>
-                  <strong>{lufsEnabled() ? '-12.8' : '--'}</strong>
+                  <strong>{lufsEnabled() ? (selectedShortTerm() !== null ? `${selectedShortTerm()}` : '—') : '--'}</strong>
                 </div>
                 <div classList={{ 'is-warn': lufsEnabled() && truePeakStatus() === 'warn', 'is-fail': lufsEnabled() && truePeakStatus() === 'fail' }}>
                   <span>True Peak</span>
@@ -1075,11 +1151,11 @@ function App() {
                 <div class="loudness-max-stats">
                   <div>
                     <span>Short Term Max</span>
-                    <strong>{lufsEnabled() ? '-10.9' : '--'}</strong>
+                    <strong>{lufsEnabled() ? (selectedShortTermMax() !== null ? `${selectedShortTermMax()}` : '—') : '--'}</strong>
                   </div>
                   <div>
                     <span>Momentary Max</span>
-                    <strong>{lufsEnabled() ? '-9.8' : '--'}</strong>
+                    <strong>{lufsEnabled() ? (selectedMomentaryMax() !== null ? `${selectedMomentaryMax()}` : '—') : '--'}</strong>
                   </div>
                 </div>
               </div>
