@@ -19,7 +19,7 @@ export interface SharePayload {
 }
 
 // Replace this with the deployed Google Apps Script Web App URL later
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzTZqIPXJStmzf7P2LeTeBSbDv5ne3z27FqD6uEkgMQRBiPtxY_hstd0wsbAVOF8GD-/exec';
+const APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbzTZqIPXJStmzf7P2LeTeBSbDv5ne3z27FqD6uEkgMQRBiPtxY_hstd0wsbAVOF8GD-/exec';
 
 export async function sendNotes(payload: SharePayload): Promise<boolean> {
   if (APPS_SCRIPT_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {

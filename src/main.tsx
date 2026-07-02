@@ -7,15 +7,22 @@ import { open } from '@tauri-apps/plugin-dialog';
 import './styles.css';
 import html2canvas from 'html2canvas';
 import { sendNotes } from './services/share';
+import { Speaker, speakers, channelOrder } from './speakerConfig';
+import { SpeakerRoom } from './components/SpeakerRoom';
+import {
+  TargetStatus,
+  loudnessPosition,
+  ppmPercentFromDb,
+  statusLabel,
+  targetPlatforms,
+} from './meteringConfig';
+import { LoudnessPanel } from './components/LoudnessPanel';
+import { TransportBar } from './components/TransportBar';
+import { Timeline } from './components/Timeline';
+import { formatTime } from './utils';
 
 const BASE_W = 1500;
 const BASE_H = 940;
-
-type Speaker = {
-  label: string;
-  group: 'front' | 'side' | 'rear' | 'top' | 'lfe';
-  area: string;
-};
 
 type Note = {
   id: number;
@@ -31,10 +38,6 @@ const MOCK_DURATION_SECONDS = 214;
 const PLAYHEAD_NUDGE_SECONDS = 1;
 const PLAYHEAD_SCRUB_SECONDS = 5;
 const zoomOptions = [75, 100, 125, 150];
-
-type TargetStatus = 'pass' | 'warn' | 'fail';
-
-const statusLabel: Record<TargetStatus, string> = { pass: 'Pass', warn: 'Warn', fail: 'Fail' };
 
 type MixVersion = {
   id: 'a' | 'b';
@@ -75,24 +78,6 @@ type TauriFile = File & {
 
 const isTauriRuntime = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-const speakers: Speaker[] = [
-  { label: 'L',   group: 'front', area: 'left' },
-  { label: 'C',   group: 'front', area: 'center' },
-  { label: 'R',   group: 'front', area: 'right' },
-  { label: 'LFE', group: 'lfe',   area: 'lfe' },
-  { label: 'Ls',  group: 'side',  area: 'leftSide' },
-  { label: 'Rs',  group: 'side',  area: 'rightSide' },
-  { label: 'Lrs', group: 'rear',  area: 'leftRear' },
-  { label: 'Rrs', group: 'rear',  area: 'rightRear' },
-  { label: 'Ltf', group: 'top',   area: 'leftTopFront' },
-  { label: 'Rtf', group: 'top',   area: 'rightTopFront' },
-  { label: 'Ltr', group: 'top',   area: 'leftTopRear' },
-  { label: 'Rtr', group: 'top',   area: 'rightTopRear' },
-];
-
-// Backend buffer/meter channel order (matches atmos_wrapper.m labels12) — differs from `speakers` display order
-const channelOrder = ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'Lrs', 'Rrs', 'Ltf', 'Rtf', 'Ltr', 'Rtr'];
-
 const meterRows = [
   { label: 'L', value: 72 },
   { label: 'R', value: 69 },
@@ -108,25 +93,6 @@ const meterRows = [
   { label: 'Rtr', value: 30 },
 ];
 
-const loudnessTicks = ['-inf', '-54', '-45', '-36', '-16', '-9', '-6', '-3', '0'];
-const ppmTicks = ['-inf', '-54', '-45', '-36', '-27', '-24', '-18', '-9', '-6', '-1'];
-
-// dB values behind ppmTicks; ticks render evenly spaced, so dB→% is piecewise-linear between them
-const ppmTickDb = [-60, -54, -45, -36, -27, -24, -18, -9, -6, -1];
-
-const ppmPercentFromDb = (db: number) => {
-  const last = ppmTickDb.length - 1;
-  if (db <= ppmTickDb[0]) return 0;
-  if (db >= ppmTickDb[last]) return 100;
-  for (let i = 0; i < last; i++) {
-    if (db <= ppmTickDb[i + 1]) {
-      const t = (db - ppmTickDb[i]) / (ppmTickDb[i + 1] - ppmTickDb[i]);
-      return ((i + t) / last) * 100;
-    }
-  }
-  return 100;
-};
-
 const linearToDb = (value: number) => (value > 0 ? 20 * Math.log10(value) : -Infinity);
 const roundTo = (value: number, digits: number) => {
   if (!Number.isFinite(value)) return value;
@@ -135,28 +101,6 @@ const roundTo = (value: number, digits: number) => {
 };
 
 type MeterChannel = { label: string; rms: number; peak: number };
-
-const loudnessPosition = (value: number) => `${Math.max(0, Math.min(100, ((value + 60) / 60) * 100))}%`;
-
-type TargetPlatform = { id: string; label: string; target: number; truePeak: number; tolerance?: number; note?: string };
-
-// Stereo/broadcast targets: widely published industry norms (Spotify/YouTube -14, Apple Sound Check -16,
-// Amazon Music -14/-2dBTP, EBU R128 -23, ATSC A/85 -24).
-// Atmos entries verified 2026-07-01 against official sources:
-//   - Dolby Atmos Music (Apple Music / Amazon Music / Tidal): -18 LKFS, -1 dBTP
-//     https://www.dolby.com/siteassets/dolby-creator-lab/dolby-atmos-music-accelerator/dolby-atmos-music-delivery-playbook-1.pdf
-//   - Netflix Dolby Atmos Home Mix: -27 LKFS +/-2 LU dialogue-gated (ITU-R BS.1770-1), -2 dBFS true peak
-//     https://partnerhelp.netflixstudios.com/hc/en-us/articles/115001539991-Netflix-Dolby-Atmos-Home-Mix-Deliverable-Requirements-v2-3
-const targetPlatforms: TargetPlatform[] = [
-  { id: 'apple', label: 'Apple Music (-16)', target: -16, truePeak: -1 },
-  { id: 'spotify', label: 'Spotify (-14)', target: -14, truePeak: -1 },
-  { id: 'youtube', label: 'YouTube (-14)', target: -14, truePeak: -1 },
-  { id: 'amazon', label: 'Amazon Music (-14)', target: -14, truePeak: -2 },
-  { id: 'ebu', label: 'EBU R128 (-23)', target: -23, truePeak: -1 },
-  { id: 'atsc', label: 'ATSC A/85 (-24)', target: -24, truePeak: -2 },
-  { id: 'atmos-music', label: 'Atmos Music (-18)', target: -18, truePeak: -1, note: 'Apple / Amazon / Tidal' },
-  { id: 'atmos-netflix', label: 'Netflix Atmos (-27)', target: -27, truePeak: -2, tolerance: 2, note: 'dialogue-gated ±2 LU, BS.1770-1' },
-];
 
 const mixVersions: MixVersion[] = [
   {
@@ -242,15 +186,6 @@ const seedNotes: Note[] = [
     severity: 'minor',
   },
 ];
-
-function formatTime(seconds: number) {
-  const clamped = Math.max(0, seconds);
-  const hours = Math.floor(clamped / 3600);
-  const minutes = Math.floor((clamped % 3600) / 60);
-  const wholeSeconds = Math.floor(clamped % 60);
-  const frames = Math.floor((clamped % 1) * 24);
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${wholeSeconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
-}
 
 let noteIdSeed = 100;
 const nextNoteId = () => ++noteIdSeed;
@@ -467,6 +402,12 @@ function App() {
     if (parts.length === 0) return 'All';
     return `${parts.join('+')} ${speakerMode() === 'mute' ? 'Mute' : 'Solo'}`;
   });
+  const clearSpeakerSelection = () => {
+    setLockedRange({ start: 0, end: 0 });
+    setSelectedNoteId(null);
+    setSoloGroups(new Set<Speaker['group']>());
+    setActiveSpeakers(new Set<string>());
+  };
   const channelMuteMask = createMemo(() => {
     const selected = new Set<string>();
     for (const speaker of speakers) {
@@ -566,11 +507,8 @@ function App() {
 
 
   let timelineEl: HTMLDivElement | undefined;
-  let roomPlaneEl: HTMLDivElement | undefined;
   let audioInputEl: HTMLInputElement | undefined;
   let referenceInputEl: HTMLInputElement | undefined;
-  const [gridScale, setGridScale] = createSignal(1);
-  const BASE_ROOM_W = 420;
 
   const panelWidth = createMemo(() => (notesCollapsed() ? '52px' : `${notesWidth()}%`));
   const workspaceGrid = createMemo(() => `minmax(0, 1fr) ${panelWidth()}`);
@@ -1393,14 +1331,6 @@ function App() {
 
 
   onMount(() => {
-    if (!roomPlaneEl) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const w = entry.contentRect.width;
-      setGridScale(Math.min(1, w / BASE_ROOM_W));
-    });
-    ro.observe(roomPlaneEl);
-    onCleanup(() => ro.disconnect());
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
@@ -1419,375 +1349,78 @@ function App() {
   return (
     <main class="review-app" data-theme={appTheme()}>
       <div class="scaled-app" style={{ transform: `scale(${appScale()})`, 'transform-origin': 'top center', height: `${100 / appScale()}%` }}>
-      <header class="topbar">
-        <div class="topbar-left">
-          <p class="eyebrow">Pik Pro Player</p>
-          <div class="title-row">
-            <div class="topbar-title-wrap">
-              <h1>{trackTitle()}</h1>
-            </div>
-            <input
-              ref={audioInputEl}
-              class="transport-file-input"
-              type="file"
-              accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a,.mp4"
-              onChange={onAudioFileChange}
-            />
-            <button type="button" class="transport-btn is-load" onClick={onLoadAudioClick} aria-label="Load audio file">
-              Load
-            </button>
-          </div>
-        </div>
-
-        <div class="transport-bar">
-          <button type="button" class="transport-btn is-stop" onClick={stopPlayback} aria-label="Stop">■</button>
-          <button
-            type="button"
-            class="transport-btn is-play"
-            classList={{ 'is-active': isPlaying() }}
-            onClick={togglePlay}
-            aria-label={isPlaying() ? 'Pause' : 'Play'}
-          >
-            {isPlaying() ? '❚❚' : '▶'}
-          </button>
-          <button
-            type="button"
-            class="transport-btn is-loop"
-            classList={{ 'is-active': loopEnabled() }}
-            onClick={toggleLoop}
-            aria-label="Loop"
-          >
-            🔁
-          </button>
-          <span class="transport-time">{formatTime(playheadTime())}</span>
-        </div>
-
-        <div class="topbar-right">
-          <div class="zoom-control" style="flex-direction: row; align-items: center; gap: 8px;">
-            <span>Theme</span>
-            <select
-              value={appTheme()}
-              onChange={(event) => setAppTheme(event.currentTarget.value)}
-            >
-              <option value="light">Light (Default)</option>
-              <option value="dark">Dark Mode</option>
-              <option value="spotify">Spotify Green</option>
-              <option value="ableton">Ableton Grey</option>
-              <option value="flstudio">FL Studio Orange</option>
-            </select>
-          </div>
-          <button type="button" class="ghost-btn" onClick={resetWindowSize} aria-label="Reset Window Size">
-            Default Size
-          </button>
-          <span class="transport-status">{loadStatus()}</span>
-          <div class="topbar-meta">
-            <span>{activeVersion().title}</span>
-            <strong>{activeVersion().label}</strong>
-          </div>
-        </div>
-      </header>
+      <TransportBar
+        trackTitle={trackTitle}
+        isPlaying={isPlaying}
+        loopEnabled={loopEnabled}
+        playheadTime={playheadTime}
+        loadStatus={loadStatus}
+        appTheme={appTheme}
+        setAppTheme={setAppTheme}
+        activeVersion={activeVersion}
+        onLoadAudioClick={onLoadAudioClick}
+        onAudioFileChange={onAudioFileChange}
+        stopPlayback={stopPlayback}
+        togglePlay={togglePlay}
+        toggleLoop={toggleLoop}
+        resetWindowSize={resetWindowSize}
+        audioInputRef={(el) => (audioInputEl = el)}
+      />
 
       <section class="workspace" style={{ 'grid-template-columns': workspaceGrid() }}>
         <section class="speaker-stage" aria-label="Speaker room and timeline">
           <div class="room-wrap">
-            <section class="analysis-panel" aria-label="Metering and loudness">
-              <div class="analysis-heading">
-                <div>
-                  <span>Metering</span>
-                  <strong>Loudness</strong>
-                </div>
-                <button
-                  type="button"
-                  classList={{ 'is-enabled': lufsEnabled() }}
-                  onClick={() => setLufsEnabled((enabled) => !enabled)}
-                >
-                  LUFS
-                </button>
-              </div>
-              <div class="loudness-readout" classList={{ 'is-disabled': !lufsEnabled() }}>
-                <div class="loudness-readout-head">
-                  <span>Integrated</span>
-                  <span
-                    class="status-pill"
-                    classList={{ 'is-pass': lufsStatus() === 'pass', 'is-warn': lufsStatus() === 'warn', 'is-fail': lufsStatus() === 'fail' }}
-                  >
-                    {statusLabel[lufsStatus()]}
-                  </span>
-                </div>
-                <strong>{lufsEnabled() ? `${selectedIntegratedLufs()} LUFS` : '--'}</strong>
-              </div>
-              <div class="loudness-stats" classList={{ 'is-disabled': !lufsEnabled() }}>
-                <div>
-                  <span>Range</span>
-                  <strong>{lufsEnabled() ? (selectedLoudnessRange() !== null ? `${selectedLoudnessRange()} LU` : '— LU') : '--'}</strong>
-                </div>
-                <div>
-                  <span>Short</span>
-                  <strong>{lufsEnabled() ? (selectedShortTerm() !== null ? `${selectedShortTerm()}` : '—') : '--'}</strong>
-                </div>
-                <div classList={{ 'is-warn': lufsEnabled() && truePeakStatus() === 'warn', 'is-fail': lufsEnabled() && truePeakStatus() === 'fail' }}>
-                  <span>True Peak</span>
-                  <strong>{lufsEnabled() ? `${selectedTruePeak()}` : '--'}</strong>
-                </div>
-              </div>
-              <div class="loudness-bar-card" classList={{ 'is-disabled': !lufsEnabled() }}>
-                <div class="loudness-bar-head">
-                  <span>LUFS Bar</span>
-                  <select
-                    class="target-select"
-                    value={targetPlatformId()}
-                    onChange={(event) => setTargetPlatformId(event.currentTarget.value)}
-                  >
-                    <For each={targetPlatforms}>{(platform) => <option value={platform.id}>{platform.label}</option>}</For>
-                  </select>
-                </div>
-                <div class="target-spec-row">
-                  <div class="target-spec-note">
-                    Max True Peak {targetPlatform().truePeak} dBTP{targetPlatform().note ? ` · ${targetPlatform().note}` : ''}
-                  </div>
-                  <button type="button" class="export-link" onClick={exportComplianceReport}>Export Report</button>
-                </div>
-                <div class="loudness-scale">
-                  <div class="loudness-track" />
-                  <div
-                    class="loudness-current"
-                    classList={{ 'is-warn': lufsStatus() === 'warn', 'is-fail': lufsStatus() === 'fail' }}
-                    style={{ left: lufsEnabled() ? loudnessPosition(selectedIntegratedLufs()) : '0%' }}
-                  />
-                  <div class="loudness-target" style={{ left: loudnessPosition(targetPlatform().target) }} />
-                  <For each={loudnessTicks}>
-                    {(tick) => (
-                      <span class="loudness-tick" classList={{ 'is-target': tick !== '-inf' && Number(tick) === targetPlatform().target }} style={{ left: tick === '-inf' ? '0%' : loudnessPosition(Number(tick)) }}>
-                        {tick}
-                      </span>
-                    )}
-                  </For>
-                </div>
-                <div class="loudness-max-stats">
-                  <div>
-                    <span>Short Term Max</span>
-                    <strong>{lufsEnabled() ? (selectedShortTermMax() !== null ? `${selectedShortTermMax()}` : '—') : '--'}</strong>
-                  </div>
-                  <div>
-                    <span>Momentary Max</span>
-                    <strong>{lufsEnabled() ? (selectedMomentaryMax() !== null ? `${selectedMomentaryMax()}` : '—') : '--'}</strong>
-                  </div>
-                </div>
-              </div>
-              <div class="meter-list" classList={{ 'is-disabled': !ppmEnabled() }}>
-                <div class="meter-head">
-                  <div>
-                    <span>PPM</span>
-                    <strong>dB Scale</strong>
-                  </div>
-                  <button
-                    type="button"
-                    classList={{ 'is-enabled': ppmEnabled() }}
-                    onClick={() => setPpmEnabled((enabled) => !enabled)}
-                  >
-                    PPM
-                  </button>
-                </div>
-                <div class="ppm-grid">
-                  <div class="ppm-scale-row">
-                    <span class="ppm-scale-spacer" />
-                    <div class="ppm-scale-ticks">
-                      <For each={ppmTicks}>{(tick) => <span>{tick}</span>}</For>
-                    </div>
-                  </div>
-                  <div class="ppm-meters">
-                    <For each={displayMeterRows()}>
-                      {(meter) => (
-                        <div class="ppm-channel">
-                          <span>{meter.label}</span>
-                          <div class="ppm-slot">
-                            <i style={{ transform: `scaleX(${ppmEnabled() ? meter.value / 100 : 0})` }} />
-                          </div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <LoudnessPanel
+              lufsEnabled={lufsEnabled}
+              setLufsEnabled={setLufsEnabled}
+              ppmEnabled={ppmEnabled}
+              setPpmEnabled={setPpmEnabled}
+              lufsStatus={lufsStatus}
+              truePeakStatus={truePeakStatus}
+              selectedIntegratedLufs={selectedIntegratedLufs}
+              selectedLoudnessRange={selectedLoudnessRange}
+              selectedShortTerm={selectedShortTerm}
+              selectedTruePeak={selectedTruePeak}
+              selectedShortTermMax={selectedShortTermMax}
+              selectedMomentaryMax={selectedMomentaryMax}
+              targetPlatformId={targetPlatformId}
+              setTargetPlatformId={setTargetPlatformId}
+              targetPlatform={targetPlatform}
+              displayMeterRows={displayMeterRows}
+              onExportReport={exportComplianceReport}
+            />
 
-            <section class="speaker-view" aria-label="Top-down speaker view">
-              <div class="speaker-control-bar">
-                <div class="control-row-top">
-                  <div class="speaker-room-title">
-                    <span>Speaker Room</span>
-                    <strong>Top Monitoring View</strong>
-                  </div>
-                  <div class="mode-toggle">
-                    <button
-                      type="button"
-                      classList={{ 'is-mode-active': speakerMode() === 'solo' }}
-                      onClick={() => setSpeakerMode('solo')}
-                    >Solo</button>
-                    <button
-                      type="button"
-                      classList={{ 'is-mode-mute': speakerMode() === 'mute' }}
-                      onClick={() => setSpeakerMode('mute')}
-                    >Mute</button>
-                  </div>
-                </div>
-                <div class="group-pills">
-                  <For each={[
-                    { id: 'front' as const, label: 'Front' },
-                    { id: 'side' as const, label: 'Side' },
-                    { id: 'rear' as const, label: 'Rear' },
-                    { id: 'top' as const, label: 'Top' },
-                    { id: 'lfe' as const, label: 'LFE' },
-                  ]}>
-                    {(group) => (
-                      <button
-                        type="button"
-                        classList={{
-                          'is-solo': soloGroups().has(group.id) && speakerMode() === 'solo',
-                          'is-mute': soloGroups().has(group.id) && speakerMode() === 'mute',
-                        }}
-                        onClick={(e) => toggleGroup(group.id, e.shiftKey)}
-                      >
-                        {group.label}
-                      </button>
-                    )}
-                  </For>
-                  <button type="button" class="clear-pill" onClick={() => { setLockedRange({ start: 0, end: 0 }); setSelectedNoteId(null); setSoloGroups(new Set<Speaker['group']>()); setActiveSpeakers(new Set<string>()); }}>
-                    Clear
-                  </button>
-                </div>
-              </div>
-              <div class="speaker-view-title">
-                <span>Speaker View</span>
-                <strong classList={{ 'is-mute-label': (soloGroups().size > 0 || activeSpeakers().size > 0) && speakerMode() === 'mute' }}>{selectionLabel()}</strong>
-              </div>
-              <div class="room-plane" ref={roomPlaneEl}>
-                <div class="screen-line">SCREEN</div>
-                <div class="speaker-grid" style={{ transform: `scaleX(${gridScale()})`, 'transform-origin': 'center top' }}>
-                  <div class="listener-dot">
-                    <span />
-                  </div>
-                  <For each={speakers}>
-                    {(speaker) => {
-                      const isActive = () => activeSpeakers().has(speaker.label) || soloGroups().has(speaker.group);
-                      return (
-                        <button
-                          type="button"
-                          class="speaker-button"
-                          classList={{
-                            'is-front': speaker.group === 'front',
-                            'is-side': speaker.group === 'side',
-                            'is-rear': speaker.group === 'rear',
-                            'is-height': speaker.group === 'top',
-                            'is-lfe': speaker.group === 'lfe',
-                            'is-active': isActive() && speakerMode() === 'solo',
-                            'is-muted': isActive() && speakerMode() === 'mute',
-                          }}
-                          style={{ 'grid-area': speaker.area }}
-                          onClick={(e) => toggleSpeaker(speaker.label, e.shiftKey)}
-                          aria-pressed={isActive()}
-                        >
-                          {speaker.label}
-                        </button>
-                      );
-                    }}
-                  </For>
-                </div>
-              </div>
-            </section>
+            <SpeakerRoom
+              speakerMode={speakerMode}
+              setSpeakerMode={setSpeakerMode}
+              soloGroups={soloGroups}
+              activeSpeakers={activeSpeakers}
+              toggleGroup={toggleGroup}
+              toggleSpeaker={toggleSpeaker}
+              selectionLabel={selectionLabel}
+              onClear={clearSpeakerSelection}
+            />
           </div>
 
-          <div class="timeline-card">
-            <div class="timeline-head">
-              <div style={{ display: 'flex', 'align-items': 'center', gap: '16px' }}>
-                <div class="timeline-range-badge">
-                  <span>Locked Range</span>
-                  <strong>{selectedRangeLabel()}</strong>
-                </div>
-                <button
-                  type="button"
-                  class="timeline-toggle-btn"
-                  classList={{ 'is-active': linkTimelineEdit() }}
-                  onClick={() => setLinkTimelineEdit(!linkTimelineEdit())}
-                >
-                  <span class="toggle-indicator"></span>
-                  Link Edit to Playhead
-                </button>
-              </div>
-            </div>
-            <div
-              ref={timelineEl}
-              class="timeline-track"
-              onPointerDown={onTimelineDown}
-              onPointerMove={onTimelineMove}
-              onPointerUp={onTimelineUp}
-              onPointerCancel={onTimelineUp}
-            >
-              <Show when={waveformPeaks()}>
-                {(peaks) => (
-                  <svg class="waveform-bg" preserveAspectRatio="none" viewBox={`0 0 ${peaks().length - 1} 100`}>
-                    <path d={waveformPath()} />
-                  </svg>
-                )}
-              </Show>
-              <For each={filteredSortedNotes()}>
-                {(note) => (
-                  <div
-                    class="note-range"
-                    classList={{
-                      'is-point': note.kind === 'point',
-                      'is-selected': selectedNoteId() === note.id,
-                      'is-critical': note.severity === 'critical',
-                    }}
-                    style={{
-                      left: `${(note.rangeStart / playbackDuration()) * 100}%`,
-                      width: note.kind === 'point' ? undefined : `${Math.max(0.7, ((note.rangeEnd - note.rangeStart) / playbackDuration()) * 100)}%`,
-                    }}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      selectNote(note);
-                    }}
-                    title={note.body || 'Empty note'}
-                  >
-                    <button
-                      type="button"
-                      class="note-range-delete"
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        deleteNote(note.id);
-                      }}
-                      aria-label="Delete note"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </For>
-              <div
-                class="locked-range"
-                style={{
-                  left: `${(displayRange().start / playbackDuration()) * 100}%`,
-                  width: `${Math.max(0.35, ((displayRange().end - displayRange().start) / playbackDuration()) * 100)}%`,
-                }}
-              />
-              <div class="playhead" style={{ left: `${(playheadTime() / playbackDuration()) * 100}%` }} />
-            </div>
-            <div class="timeline-ticks">
-              <For each={timelineTicks()}>
-                {(tick) => <span>{formatTime(tick)}</span>}
-              </For>
-            </div>
-          </div>
-          
-          <div class="timeline-hotkeys">
-            <span><kbd>Space</kbd> Play / Pause</span>
-            <span><kbd>←</kbd> / <kbd>→</kbd> Scrub</span>
-            <span><kbd>N</kbd> Point Note</span>
-            <span><kbd>Shift</kbd> + Click Expand</span>
-            <span>Drag Select Range</span>
-            <span><kbd>Enter</kbd> Range Note</span>
-          </div>
+          <Timeline
+            selectedRangeLabel={selectedRangeLabel}
+            linkTimelineEdit={linkTimelineEdit}
+            setLinkTimelineEdit={setLinkTimelineEdit}
+            onTimelineDown={onTimelineDown}
+            onTimelineMove={onTimelineMove}
+            onTimelineUp={onTimelineUp}
+            timelineRef={(el) => (timelineEl = el)}
+            waveformPeaks={waveformPeaks}
+            waveformPath={waveformPath}
+            filteredSortedNotes={filteredSortedNotes}
+            selectedNoteId={selectedNoteId}
+            selectNote={selectNote}
+            deleteNote={deleteNote}
+            playbackDuration={playbackDuration}
+            displayRange={displayRange}
+            playheadTime={playheadTime}
+            timelineTicks={timelineTicks}
+          />
         </section>
 
         <aside class="notes-panel" classList={{ 'is-collapsed': notesCollapsed() }}>
