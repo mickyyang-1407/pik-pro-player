@@ -18,7 +18,7 @@ export interface SharePayload {
   screenshot: string; // Base64
 }
 
-// Replace this with the deployed Google Apps Script Web App URL later
+// TODO(2026-07-02): email 通道要換到 pikproplayer@gmail.com——用該帳號部署 scratch/Code.gs 後，把新的 Web App URL 換進來（舊 URL 在此之前仍可用）
 const APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbzTZqIPXJStmzf7P2LeTeBSbDv5ne3z27FqD6uEkgMQRBiPtxY_hstd0wsbAVOF8GD-/exec';
 
 export async function sendNotes(payload: SharePayload): Promise<boolean> {
